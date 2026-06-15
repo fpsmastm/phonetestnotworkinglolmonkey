@@ -475,20 +475,14 @@ async function makeCall() {
   if (targetId === $('my-peer-id')?.textContent) { toast("That's your own ID!"); return; }
   if (!peer) { toast('Not connected yet'); return; }
 
+  // Always start with audio-only for reliability — camera can be toggled on during call
   try {
-    localStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: true });
-    isCameraOn = true;
+    localStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
   } catch (err) {
-    // Camera denied or not found — try audio only
-    try {
-      localStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
-      isCameraOn = false;
-      toast('Camera not available — voice only');
-    } catch (audioErr) {
-      handleMicError(audioErr);
-      return;
-    }
+    handleMicError(err);
+    return;
   }
+  isCameraOn = false;
 
   const call = peer.call(targetId, localStream, {
     metadata: { name: myName, account: savedAccount }
@@ -500,10 +494,6 @@ async function makeCall() {
   showActiveCallScreen('Calling...', targetId);
   $('call-status-badge').textContent = 'Calling...';
   updateCameraUI();
-  if (isCameraOn) {
-    attachLocalVideo(localStream);
-    showVideoArea();
-  }
 
   call.on('stream', remoteStream => {
     attachRemoteStream(remoteStream);
@@ -551,23 +541,17 @@ function initIncomingCallButtons() {
     btnAccept.addEventListener('click', async () => {
       if (!pendingCall) return;
 
+      // Start audio-only — camera toggled on during call if wanted
       try {
-        localStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: true });
-        isCameraOn = true;
+        localStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
       } catch (err) {
-        // Camera denied — try audio only
-        try {
-          localStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
-          isCameraOn = false;
-          toast('Camera not available — voice only');
-        } catch (audioErr) {
-          handleMicError(audioErr);
-          pendingCall.close();
-          pendingCall = null;
-          showScreen('lobby');
-          return;
-        }
+        handleMicError(err);
+        pendingCall.close();
+        pendingCall = null;
+        showScreen('lobby');
+        return;
       }
+      isCameraOn = false;
 
       pendingCall.answer(localStream);
       currentCall = pendingCall;
@@ -577,10 +561,6 @@ function initIncomingCallButtons() {
       const callerName = currentCall.metadata?.name || currentCall.peer;
       showActiveCallScreen(callerName, currentCall.peer);
       updateCameraUI();
-      if (isCameraOn) {
-        attachLocalVideo(localStream);
-        showVideoArea();
-      }
 
       currentCall.on('stream', remoteStream => {
         attachRemoteStream(remoteStream);

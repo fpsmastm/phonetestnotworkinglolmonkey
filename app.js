@@ -207,15 +207,32 @@ function addFriend(account) {
   renderPeople();
 }
 
+function removeFriend(id) {
+  friends = friends.filter(f => f !== id);
+  saveJson(FRIENDS_KEY, friends);
+  // Also remove from directory
+  directory = directory.filter(d => d.id !== id);
+  saveJson(DIRECTORY_KEY, directory);
+  // Close chat if viewing this friend
+  if (currentChatId === id) {
+    closeChat();
+  }
+  renderPeople();
+  toast('Friend removed');
+}
+
 function renderPeople() {
   const list = $('people-list');
   if (!list) return;
   const people = directory.filter(person => person.id !== savedAccount?.id);
   list.innerHTML = people.length ? people.map(person => `
-    <button class="person-card" data-id="${escapeHtml(person.id)}" type="button">
+    <div class="person-card" data-id="${escapeHtml(person.id)}">
       <span class="mini-avatar">${escapeHtml(avatarLetter(person.name))}</span>
       <span class="person-main"><strong>${escapeHtml(person.name)}</strong><small>${escapeHtml(person.id)}</small></span>
-    </button>
+      <button class="btn-unfriend" data-id="${escapeHtml(person.id)}" title="Remove friend">
+        <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M18 6L6 18M6 6l12 12"/></svg>
+      </button>
+    </div>
   `).join('') : '<p class="empty-state">No friends yet. Add someone by their Call ID above.</p>';
 }
 
@@ -280,7 +297,22 @@ function setupDataConnection(conn) {
 function connectToPeer(peerId) {
   if (!peer) return null;
   if (dataConnections.has(peerId)) return dataConnections.get(peerId);
-  const conn = peer.connect(peerId, { metadata: { account: savedAccount } });
+
+  const conn = peer.connect(peerId, {
+    metadata: { account: savedAccount },
+    reliable: true
+  });
+
+  // Handle connection errors silently - don't kick user out
+  conn.on('error', err => {
+    console.log('Connection to peer failed (they may be offline):', err);
+    // Don't show error toast - just log it
+  });
+
+  conn.on('close', () => {
+    dataConnections.delete(peerId);
+  });
+
   setupDataConnection(conn);
   return conn;
 }
@@ -307,12 +339,23 @@ function initMessaging() {
 
   if (peopleList) {
     peopleList.addEventListener('click', e => {
+      // Check if clicking the remove button
+      const removeBtn = e.target.closest('.btn-unfriend');
+      if (removeBtn) {
+        e.stopPropagation();
+        const id = removeBtn.dataset.id;
+        if (confirm('Remove this friend?')) {
+          removeFriend(id);
+        }
+        return;
+      }
+      // Otherwise, click on the card to open chat
       const card = e.target.closest('.person-card');
       if (!card) return;
       const id = card.dataset.id;
-      addFriend({ id, name: id });
-      connectToPeer(id);
       setActiveChat(id);
+      // Try to connect silently in the background - don't show error if offline
+      connectToPeer(id);
     });
   }
 
@@ -330,12 +373,29 @@ function sendMessage() {
   const inputMessage = $('input-message');
   const text = inputMessage?.value.trim() || '';
   if (!currentChatId || !text) return;
-  const conn = connectToPeer(currentChatId);
-  const payload = { type: 'message', text, account: savedAccount };
-  if (conn?.open) conn.send(payload);
-  else conn?.once?.('open', () => conn.send(payload));
+
+  // Add message to local history immediately
   addMessage(currentChatId, text, 'me');
   inputMessage.value = '';
+
+  // Try to send to peer
+  const conn = connectToPeer(currentChatId);
+  if (!conn) {
+    toast('You are not connected. Message saved locally.');
+    return;
+  }
+
+  const payload = { type: 'message', text, account: savedAccount };
+
+  if (conn.open) {
+    conn.send(payload);
+  } else {
+    // Peer might be offline - queue the message to send when they connect
+    toast('Friend is offline. Message will be delivered when they are online.');
+    conn.once('open', () => {
+      conn.send(payload);
+    });
+  }
 }
 
 // ── Copy ID ──────────────────────────────────────────────────

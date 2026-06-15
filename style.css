@@ -261,6 +261,23 @@ input::placeholder { color: var(--muted); }
 .person-main strong { font-weight: 600; }
 .person-main small { color: var(--muted); font-size: .78rem; overflow-wrap: anywhere; }
 
+.btn-unfriend {
+  background: transparent;
+  border: none;
+  color: var(--muted);
+  cursor: pointer;
+  padding: 6px;
+  border-radius: 6px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background .15s, color .15s;
+}
+.btn-unfriend:hover {
+  background: rgba(239,68,68,.15);
+  color: var(--red);
+}
+
 .empty-state { color: var(--muted); font-size: .85rem; text-align: center; padding: 12px; }
 
 /* ── Chat Card ── */

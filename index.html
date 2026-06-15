@@ -21,7 +21,7 @@
 
     <div class="card" id="join-card">
       <h2>Get started</h2>
-      <p class="hint">Pick a display name. Share your Call ID with a friend to connect.</p>
+      <p class="hint">Pick a display name once. LinkUp saves your account on this device so you stay signed in.</p>
 
       <label for="input-name">Your name</label>
       <input id="input-name" type="text" placeholder="e.g. Alex" maxlength="24" autocomplete="off" />
@@ -47,7 +47,7 @@
             <svg width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
           </button>
         </div>
-        <p class="id-hint">Share this ID with a classmate so they can call you</p>
+        <p class="id-hint">This account ID is saved on this device and reused every time you open LinkUp.</p>
       </div>
 
       <!-- Call someone -->
@@ -63,19 +63,50 @@
         </div>
       </div>
 
+
+      <!-- Friends and account directory -->
+      <div class="card people-card">
+        <span class="eyebrow">Friends & accounts</span>
+        <p class="hint compact">Add an account ID to save it, message it, and make it visible in your account list.</p>
+        <label for="input-friend-id">Friend account ID</label>
+        <div class="input-row">
+          <input id="input-friend-id" type="text" placeholder="Paste an account ID" autocomplete="off" />
+          <button id="btn-add-friend" class="btn btn-primary btn-icon">Add</button>
+        </div>
+        <div id="people-list" class="people-list" aria-live="polite"></div>
+      </div>
+
+      <!-- Messaging -->
+      <div class="card chat-card">
+        <span class="eyebrow">Messages</span>
+        <div class="chat-header">
+          <div>
+            <h3 id="chat-title">Pick a friend</h3>
+            <p id="chat-subtitle">Choose an account above to start messaging.</p>
+          </div>
+        </div>
+        <div id="message-thread" class="message-thread">
+          <p class="empty-state">Messages show up here.</p>
+        </div>
+        <div class="input-row chat-input">
+          <input id="input-message" type="text" placeholder="Type a message" autocomplete="off" disabled />
+          <button id="btn-send" class="btn btn-primary btn-icon" disabled>Send</button>
+        </div>
+      </div>
+
       <!-- Recent / instructions -->
       <div class="tips">
         <div class="tip-item">
           <span class="tip-num">1</span>
-          <span>Copy your Call ID above and send it to a friend via chat or text</span>
+          <span>Add a friend by account ID, then call or message them</span>
         </div>
         <div class="tip-item">
           <span class="tip-num">2</span>
-          <span>They paste your ID and hit <strong>Call</strong></span>
+          <span>Choose any saved account from the list to view it</span>
         </div>
         <div class="tip-item">
           <span class="tip-num">3</span>
-          <span>Accept the incoming call — you're connected!</span>
+          <span>Messages are direct between browsers while both people are online</span>
         </div>
       </div>
     </div>

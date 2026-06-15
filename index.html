@@ -79,6 +79,23 @@
         <div id="people-list" class="people-list" aria-live="polite"></div>
       </div>
 
+      <!-- Messaging -->
+      <div class="card chat-card">
+        <span class="eyebrow">Messages</span>
+        <div class="chat-header">
+          <div>
+            <h3 id="chat-title">Pick a friend</h3>
+            <p id="chat-subtitle">Choose an account above to start messaging.</p>
+          </div>
+        </div>
+        <div id="message-thread" class="message-thread">
+          <p class="empty-state">Messages show up here.</p>
+        </div>
+        <div class="input-row chat-input">
+          <input id="input-message" type="text" placeholder="Type a message" autocomplete="off" disabled />
+          <button id="btn-send" class="btn btn-primary btn-icon" disabled>Send</button>
+        </div>
+      </div>
 
       <!-- Recent / instructions -->
       <div class="tips">

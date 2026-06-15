@@ -1,0 +1,187 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>LinkUp — School Calls</title>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>📞</text></svg>" />
+  <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Inter:wght@400;500&display=swap" rel="stylesheet" />
+  <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
+  <link rel="stylesheet" href="style.css?v=20260615-fix2" />
+</head>
+<body>
+
+  <!-- SCREEN: Landing / Set your name -->
+  <div id="screen-join" class="screen active">
+    <div class="brand">
+      <div class="brand-icon">📡</div>
+      <h1>LinkUp</h1>
+      <p class="brand-sub">Instant voice calls between Chromebooks</p>
+    </div>
+
+    <div class="card" id="join-card">
+      <h2>Get started</h2>
+      <p class="hint">Pick a display name. LinkUp saves your account on this device so you stay signed in.</p>
+
+      <label for="input-name">Your name</label>
+      <input id="input-name" type="text" placeholder="e.g. Alex" maxlength="24" autocomplete="off" spellcheck="false" />
+
+      <button id="btn-start" class="btn btn-primary">Create my Call ID →</button>
+    </div>
+  </div>
+
+  <!-- SCREEN: Lobby — main hub for calls and messaging -->
+  <div id="screen-lobby" class="screen">
+    <header class="top-bar">
+      <div class="brand-sm">📡 LinkUp</div>
+      <div class="top-actions">
+        <div id="status-pill" class="pill pill-online">● Online</div>
+      </div>
+    </header>
+
+    <div class="lobby-body">
+      <!-- Your ID -->
+      <div class="card id-card">
+        <span class="eyebrow">Your Call ID</span>
+        <div class="id-display">
+          <span id="my-peer-id">—</span>
+          <button id="btn-copy" class="icon-btn" title="Copy ID">
+            <svg width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+          </button>
+        </div>
+        <p class="id-hint">Share this ID so friends can call or message you.</p>
+      </div>
+
+      <!-- Call someone -->
+      <div class="card call-card">
+        <span class="eyebrow">Call someone</span>
+        <label for="input-callee-id">Their Call ID</label>
+        <div class="input-row">
+          <input id="input-callee-id" type="text" placeholder="Paste their ID here" autocomplete="off" spellcheck="false" inputmode="text" />
+          <button id="btn-call" class="btn btn-primary btn-icon">
+            <svg width="18" height="18" fill="currentColor" viewBox="0 0 24 24"><path d="M6.6 10.8c1.4 2.8 3.8 5.1 6.6 6.6l2.2-2.2c.3-.3.7-.4 1-.2 1.1.4 2.3.6 3.6.6.6 0 1 .4 1 1V20c0 .6-.4 1-1 1-9.4 0-17-7.6-17-17 0-.6.4-1 1-1h3.5c.6 0 1 .4 1 1 0 1.3.2 2.5.6 3.6.1.3 0 .7-.2 1L6.6 10.8z"/></svg>
+            Call
+          </button>
+        </div>
+      </div>
+
+      <!-- Add friend -->
+      <div class="card people-card">
+        <span class="eyebrow">Add a friend</span>
+        <p class="hint compact">Enter their Call ID to start messaging.</p>
+        <div class="input-row">
+          <input id="input-friend-id" type="text" placeholder="Paste their Call ID" autocomplete="off" spellcheck="false" inputmode="text" />
+          <button id="btn-add-friend" class="btn btn-primary btn-icon">Add</button>
+        </div>
+      </div>
+
+      <!-- Friends list -->
+      <div class="card friends-card">
+        <span class="eyebrow">Friends</span>
+        <div id="people-list" class="people-list" aria-live="polite">
+          <p class="empty-state">No friends yet. Add someone by their Call ID above.</p>
+        </div>
+      </div>
+
+      <!-- Active chat -->
+      <div class="card chat-card" id="active-chat-card" style="display:none;">
+        <div class="chat-header-row">
+          <button id="btn-close-chat" class="icon-btn" title="Close chat">
+            <svg width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M19 12H5M12 5l7 7-7 7"/></svg>
+          </button>
+          <div class="chat-header-info">
+            <h3 id="chat-title">Select a friend</h3>
+            <p id="chat-subtitle">Click a friend to start messaging</p>
+          </div>
+        </div>
+        <div id="message-thread" class="message-thread">
+          <p class="empty-state">Messages appear here.</p>
+        </div>
+        <div class="input-row chat-input-row">
+          <input id="input-message" type="text" placeholder="Type a message..." autocomplete="off" spellcheck="true" />
+          <button id="btn-send" class="btn btn-primary btn-icon">Send</button>
+        </div>
+      </div>
+
+      <!-- Quick tips -->
+      <div class="tips">
+        <div class="tip-item">
+          <span class="tip-num">1</span>
+          <span>Share your Call ID with a friend</span>
+        </div>
+        <div class="tip-item">
+          <span class="tip-num">2</span>
+          <span>Add their Call ID above to message them</span>
+        </div>
+        <div class="tip-item">
+          <span class="tip-num">3</span>
+          <span>Click any friend to chat or call them</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- SCREEN: Incoming call -->
+  <div id="screen-incoming" class="screen">
+    <div class="call-overlay">
+      <div class="caller-avatar" id="incoming-avatar">?</div>
+      <h2 id="incoming-name">Someone</h2>
+      <p class="call-label">Incoming call...</p>
+      <div class="call-actions">
+        <button id="btn-reject" class="call-btn call-btn-end">
+          <svg width="24" height="24" fill="currentColor" viewBox="0 0 24 24"><path d="M6.6 10.8c1.4 2.8 3.8 5.1 6.6 6.6l2.2-2.2c.3-.3.7-.4 1-.2 1.1.4 2.3.6 3.6.6.6 0 1 .4 1 1V20c0 .6-.4 1-1 1-9.4 0-17-7.6-17-17 0-.6.4-1 1-1h3.5c.6 0 1 .4 1 1 0 1.3.2 2.5.6 3.6.1.3 0 .7-.2 1L6.6 10.8z"/></svg>
+        </button>
+        <button id="btn-accept" class="call-btn call-btn-accept">
+          <svg width="24" height="24" fill="currentColor" viewBox="0 0 24 24"><path d="M6.6 10.8c1.4 2.8 3.8 5.1 6.6 6.6l2.2-2.2c.3-.3.7-.4 1-.2 1.1.4 2.3.6 3.6.6.6 0 1 .4 1 1V20c0 .6-.4 1-1 1-9.4 0-17-7.6-17-17 0-.6.4-1 1-1h3.5c.6 0 1 .4 1 1 0 1.3.2 2.5.6 3.6.1.3 0 .7-.2 1L6.6 10.8z"/></svg>
+        </button>
+      </div>
+      <div class="action-labels">
+        <span>Decline</span>
+        <span>Accept</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- SCREEN: Active call -->
+  <div id="screen-call" class="screen">
+    <div class="call-overlay call-active-overlay">
+      <div class="call-status-badge" id="call-status-badge">Connecting...</div>
+      <div class="caller-avatar large" id="active-avatar">?</div>
+      <h2 id="active-name">—</h2>
+      <div id="call-timer" class="call-timer">0:00</div>
+
+      <div class="volume-indicator" id="vol-indicator">
+        <div class="vol-bar" id="v1"></div>
+        <div class="vol-bar" id="v2"></div>
+        <div class="vol-bar" id="v3"></div>
+        <div class="vol-bar" id="v4"></div>
+        <div class="vol-bar" id="v5"></div>
+      </div>
+
+      <div class="active-call-controls">
+        <button id="btn-mute" class="ctrl-btn" title="Mute">
+          <svg id="mute-icon-on" width="22" height="22" fill="currentColor" viewBox="0 0 24 24"><path d="M12 14c1.66 0 3-1.34 3-3V5c0-1.66-1.34-3-3-3S9 3.34 9 5v6c0 1.66 1.34 3 3 3zm5.91-3c-.49 0-.9.36-.98.85C16.52 14.2 14.47 16 12 16s-4.52-1.8-4.93-4.15c-.08-.49-.49-.85-.98-.85-.61 0-1.09.54-1 1.14.49 3 2.89 5.35 5.91 5.78V20c0 .55.45 1 1 1s1-.45 1-1v-2.08c3.02-.43 5.42-2.78 5.91-5.78.1-.6-.39-1.14-1-1.14z"/></svg>
+          <svg id="mute-icon-off" width="22" height="22" fill="currentColor" viewBox="0 0 24 24" style="display:none"><path d="M19 11h-1.7c0 .74-.16 1.43-.43 2.05l1.23 1.23c.56-.98.9-2.09.9-3.28zm-4.02.17c0-.06.02-.11.02-.17V5c0-1.66-1.34-3-3-3S9 3.34 9 5v.18l5.98 5.99zM4.27 3L3 4.27l6.01 6.01V11c0 1.66 1.33 3 2.99 3 .22 0 .44-.03.65-.08l1.66 1.66c-.71.33-1.5.52-2.31.52-2.76 0-5.3-2.1-5.3-5.1H5c0 3.41 2.72 6.23 6 6.72V20c0 .55.45 1 1 1s1-.45 1-1v-2.28c.91-.13 1.77-.45 2.54-.9L19.73 21 21 19.73 4.27 3z"/></svg>
+          <span>Mute</span>
+        </button>
+        <button id="btn-hangup" class="ctrl-btn ctrl-hangup" title="Hang up">
+          <svg width="22" height="22" fill="currentColor" viewBox="0 0 24 24"><path d="M6.6 10.8c1.4 2.8 3.8 5.1 6.6 6.6l2.2-2.2c.3-.3.7-.4 1-.2 1.1.4 2.3.6 3.6.6.6 0 1 .4 1 1V20c0 .6-.4 1-1 1-9.4 0-17-7.6-17-17 0-.6.4-1 1-1h3.5c.6 0 1 .4 1 1 0 1.3.2 2.5.6 3.6.1.3 0 .7-.2 1L6.6 10.8z" transform="rotate(135 12 12)"/></svg>
+          <span>End</span>
+        </button>
+        <button id="btn-speaker" class="ctrl-btn" title="Speaker">
+          <svg width="22" height="22" fill="currentColor" viewBox="0 0 24 24"><path d="M3 9v6h4l5 5V4L7 9H3zm13.5 3c0-1.77-1.02-3.29-2.5-4.03v8.05c1.48-.73 2.5-2.25 2.5-4.02zM14 3.23v2.06c2.89.86 5 3.54 5 6.71s-2.11 5.85-5 6.71v2.06c4.01-.91 7-4.49 7-8.77s-2.99-7.86-7-8.77z"/></svg>
+          <span>Speaker</span>
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Toast -->
+  <div id="toast" class="toast" aria-live="polite"></div>
+
+  <!-- Hidden audio element -->
+  <audio id="remote-audio" autoplay playsinline></audio>
+
+  <script src="app.js?v=20260615-fix2"></script>
+</body>
+</html>

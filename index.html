@@ -7,7 +7,7 @@
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>📞</text></svg>" />
   <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Inter:wght@400;500&display=swap" rel="stylesheet" />
   <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
-  <link rel="stylesheet" href="style.css?v=20260615-accounts" />
+  <link rel="stylesheet" href="style.css?v=20260615-fix" />
 </head>
 <body>
 
@@ -21,7 +21,7 @@
 
     <div class="card" id="join-card">
       <h2>Get started</h2>
-      <p class="hint">Pick a display name once. LinkUp saves your account on this device so you stay signed in.</p>
+      <p class="hint">Pick a display name. LinkUp saves your account on this device so you stay signed in.</p>
 
       <label for="input-name">Your name</label>
       <input id="input-name" type="text" placeholder="e.g. Alex" maxlength="24" autocomplete="off" />
@@ -30,12 +30,11 @@
     </div>
   </div>
 
-  <!-- SCREEN: Lobby — waiting for calls / make a call -->
+  <!-- SCREEN: Lobby — main hub for calls and messaging -->
   <div id="screen-lobby" class="screen">
     <header class="top-bar">
       <div class="brand-sm">📡 LinkUp</div>
       <div class="top-actions">
-        <button id="btn-open-messages" class="nav-btn" type="button">Messages</button>
         <div id="status-pill" class="pill pill-online">● Online</div>
       </div>
     </header>
@@ -50,7 +49,7 @@
             <svg width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
           </button>
         </div>
-        <p class="id-hint">This account ID is saved on this device and reused every time you open LinkUp.</p>
+        <p class="id-hint">Share this ID so friends can call or message you.</p>
       </div>
 
       <!-- Call someone -->
@@ -66,78 +65,57 @@
         </div>
       </div>
 
-
-      <!-- Friends and account directory -->
+      <!-- Add friend -->
       <div class="card people-card">
-        <span class="eyebrow">Friends & accounts</span>
-        <p class="hint compact">Add an account ID to save it. Tap a saved account to open Messages in its own tab.</p>
-        <label for="input-friend-id">Friend account ID</label>
+        <span class="eyebrow">Add a friend</span>
+        <p class="hint compact">Enter their Call ID to start messaging.</p>
         <div class="input-row">
-          <input id="input-friend-id" type="text" placeholder="Paste an account ID" autocomplete="off" />
+          <input id="input-friend-id" type="text" placeholder="Paste their Call ID" autocomplete="off" />
           <button id="btn-add-friend" class="btn btn-primary btn-icon">Add</button>
         </div>
-        <div id="people-list" class="people-list" aria-live="polite"></div>
       </div>
 
-      <!-- Messaging -->
-      <div class="card chat-card">
-        <span class="eyebrow">Messages</span>
-        <div class="chat-header">
-          <div>
-            <h3 id="chat-title">Pick a friend</h3>
-            <p id="chat-subtitle">Choose an account above to start messaging.</p>
+      <!-- Friends list -->
+      <div class="card friends-card">
+        <span class="eyebrow">Friends</span>
+        <div id="people-list" class="people-list" aria-live="polite">
+          <p class="empty-state">No friends yet. Add someone by their Call ID above.</p>
+        </div>
+      </div>
+
+      <!-- Active chat -->
+      <div class="card chat-card" id="active-chat-card" style="display:none;">
+        <div class="chat-header-row">
+          <button id="btn-close-chat" class="icon-btn" title="Close chat">
+            <svg width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M19 12H5M12 5l7 7-7 7"/></svg>
+          </button>
+          <div class="chat-header-info">
+            <h3 id="chat-title">Select a friend</h3>
+            <p id="chat-subtitle">Click a friend to start messaging</p>
           </div>
         </div>
         <div id="message-thread" class="message-thread">
-          <p class="empty-state">Messages show up here.</p>
+          <p class="empty-state">Messages appear here.</p>
         </div>
-        <div class="input-row chat-input">
-          <input id="input-message" type="text" placeholder="Type a message" autocomplete="off" disabled />
-          <button id="btn-send" class="btn btn-primary btn-icon" disabled>Send</button>
+        <div class="input-row chat-input-row">
+          <input id="input-message" type="text" placeholder="Type a message..." autocomplete="off" />
+          <button id="btn-send" class="btn btn-primary btn-icon">Send</button>
         </div>
       </div>
 
-      <!-- Recent / instructions -->
+      <!-- Quick tips -->
       <div class="tips">
         <div class="tip-item">
           <span class="tip-num">1</span>
-          <span>Add a friend by account ID, then tap them to open the Messages tab</span>
+          <span>Share your Call ID with a friend</span>
         </div>
         <div class="tip-item">
           <span class="tip-num">2</span>
-          <span>Choose any saved account from the list to view it</span>
+          <span>Add their Call ID above to message them</span>
         </div>
         <div class="tip-item">
           <span class="tip-num">3</span>
-          <span>Messages are direct between browsers while both people are online</span>
-        </div>
-      </div>
-    </div>
-  </div>
-
-
-  <!-- SCREEN: Messages -->
-  <div id="screen-messages" class="screen">
-    <header class="top-bar">
-      <div class="brand-sm">📡 LinkUp</div>
-      <button id="btn-back-lobby" class="nav-btn" type="button">← Back</button>
-    </header>
-
-    <div class="messages-body">
-      <div class="card chat-card messages-tab-card">
-        <span class="eyebrow">Messages</span>
-        <div class="chat-header">
-          <div>
-            <h3 id="chat-title">Pick a friend</h3>
-            <p id="chat-subtitle">Choose an account from Friends & accounts to start messaging.</p>
-          </div>
-        </div>
-        <div id="message-thread" class="message-thread">
-          <p class="empty-state">Messages show up here.</p>
-        </div>
-        <div class="input-row chat-input">
-          <input id="input-message" type="text" placeholder="Type a message" autocomplete="off" disabled />
-          <button id="btn-send" class="btn btn-primary btn-icon" disabled>Send</button>
+          <span>Click any friend to chat or call them</span>
         </div>
       </div>
     </div>
@@ -148,7 +126,7 @@
     <div class="call-overlay">
       <div class="caller-avatar" id="incoming-avatar">?</div>
       <h2 id="incoming-name">Someone</h2>
-      <p class="call-label">Incoming call…</p>
+      <p class="call-label">Incoming call...</p>
       <div class="call-actions">
         <button id="btn-reject" class="call-btn call-btn-end">
           <svg width="24" height="24" fill="currentColor" viewBox="0 0 24 24"><path d="M6.6 10.8c1.4 2.8 3.8 5.1 6.6 6.6l2.2-2.2c.3-.3.7-.4 1-.2 1.1.4 2.3.6 3.6.6.6 0 1 .4 1 1V20c0 .6-.4 1-1 1-9.4 0-17-7.6-17-17 0-.6.4-1 1-1h3.5c.6 0 1 .4 1 1 0 1.3.2 2.5.6 3.6.1.3 0 .7-.2 1L6.6 10.8z"/></svg>
@@ -167,7 +145,7 @@
   <!-- SCREEN: Active call -->
   <div id="screen-call" class="screen">
     <div class="call-overlay call-active-overlay">
-      <div class="call-status-badge" id="call-status-badge">Connecting…</div>
+      <div class="call-status-badge" id="call-status-badge">Connecting...</div>
       <div class="caller-avatar large" id="active-avatar">?</div>
       <h2 id="active-name">—</h2>
       <div id="call-timer" class="call-timer">0:00</div>
@@ -204,6 +182,6 @@
   <!-- Hidden audio element -->
   <audio id="remote-audio" autoplay playsinline></audio>
 
-  <script src="app.js?v=20260615-accounts"></script>
+  <script src="app.js?v=20260615-fix"></script>
 </body>
 </html>

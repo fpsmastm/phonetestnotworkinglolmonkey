@@ -45,10 +45,28 @@ body {
   min-height: 100dvh;
   animation: fadeIn .25s ease;
 }
-.screen.active { display: flex; flex-direction: column; align-items: center; justify-content: center; }
+.screen.active {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-start; /* never center-trap content */
+  overflow-y: auto;
+}
+/* Join screen needs to be centered vertically */
+#screen-join.screen.active {
+  justify-content: center;
+  padding: 24px 16px;
+}
 @keyframes fadeIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
 
 #screen-lobby.screen.active { align-items: stretch; justify-content: flex-start; }
+
+/* Incoming + active call screens fill viewport and center */
+#screen-incoming.screen.active,
+#screen-call.screen.active {
+  justify-content: flex-start;
+  overflow-y: auto;
+}
 
 /* ── Brand / Landing ── */
 .brand { text-align: center; margin-bottom: 36px; }
@@ -365,6 +383,7 @@ input:-webkit-autofill:focus {
   width: 100%;
   padding: 40px 24px;
   background: radial-gradient(ellipse at 50% 0%, rgba(99,102,241,.18) 0%, transparent 70%), var(--bg);
+  box-sizing: border-box;
 }
 .caller-avatar {
   width: 100px; height: 100px;
@@ -426,23 +445,23 @@ input:-webkit-autofill:focus {
 .vol-bar.active { background: var(--accent); }
 
 /* ── Active Call Controls ── */
-.active-call-controls { display: flex; gap: 24px; margin-top: 28px; }
+.active-call-controls { display: flex; gap: 12px; margin-top: 20px; flex-wrap: wrap; justify-content: center; }
 .ctrl-btn {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 8px;
+  gap: 6px;
   background: var(--surface);
   border: 1.5px solid var(--border);
   border-radius: 18px;
   color: var(--text);
   cursor: pointer;
-  padding: 18px 24px;
+  padding: 14px 16px;
   font-family: 'Inter', sans-serif;
-  font-size: .8rem;
+  font-size: .78rem;
   font-weight: 500;
   transition: background .2s, border-color .2s, transform .15s;
-  min-width: 80px;
+  min-width: 68px;
 }
 .ctrl-btn:hover { background: var(--surface2); border-color: var(--accent); }
 .ctrl-btn:active { transform: scale(.95); }
@@ -454,13 +473,15 @@ input:-webkit-autofill:focus {
 .video-area {
   position: relative;
   width: 100%;
-  max-width: 480px;
+  max-width: 380px;
+  max-height: 50dvh;
   border-radius: 18px;
   overflow: hidden;
   background: #000;
   aspect-ratio: 4/3;
   box-shadow: 0 8px 40px rgba(0,0,0,.5);
   margin-bottom: 8px;
+  flex-shrink: 0;
 }
 
 .remote-video {
@@ -549,10 +570,11 @@ input:-webkit-autofill:focus {
   .brand h1 { font-size: 2.2rem; }
   .card { padding: 18px 14px; }
   .lobby-body { padding: 72px 14px 28px; }
-  .active-call-controls { gap: 14px; }
-  .ctrl-btn { padding: 16px 18px; min-width: 72px; }
+  .active-call-controls { gap: 8px; }
+  .ctrl-btn { padding: 12px 12px; min-width: 60px; font-size: .72rem; }
   .call-actions { gap: 36px; }
   .action-labels { gap: 60px; }
+  .video-area { max-height: 42dvh; }
 }
 
 /* ── Reduced motion ── */

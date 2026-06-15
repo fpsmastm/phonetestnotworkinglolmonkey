@@ -22,6 +22,8 @@ let myName        = '';
 let currentCall   = null;
 let localStream   = null;
 let isMuted       = false;
+let isCameraOn    = false;
+let cameraStream  = null;
 let callStartTime = null;
 let timerInterval = null;
 let volInterval   = null;
@@ -474,10 +476,18 @@ async function makeCall() {
   if (!peer) { toast('Not connected yet'); return; }
 
   try {
-    localStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
+    localStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: true });
+    isCameraOn = true;
   } catch (err) {
-    handleMicError(err);
-    return;
+    // Camera denied or not found — try audio only
+    try {
+      localStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
+      isCameraOn = false;
+      toast('Camera not available — voice only');
+    } catch (audioErr) {
+      handleMicError(audioErr);
+      return;
+    }
   }
 
   const call = peer.call(targetId, localStream, {
@@ -489,28 +499,26 @@ async function makeCall() {
   currentCall = call;
   showActiveCallScreen('Calling...', targetId);
   $('call-status-badge').textContent = 'Calling...';
+  updateCameraUI();
+  if (isCameraOn) {
+    attachLocalVideo(localStream);
+    showVideoArea();
+  }
 
   call.on('stream', remoteStream => {
-    $('remote-audio').srcObject = remoteStream;
+    attachRemoteStream(remoteStream);
     $('call-status-badge').textContent = 'Connected';
+    if ($('call-status-badge-video')) $('call-status-badge-video').textContent = 'Connected';
     startCallTimer();
     setupVolumeMonitor(remoteStream);
     toast('Connected!');
   });
 
-  call.on('close', () => {
-    // Only end call if we were actually connected (stream received)
-    // This prevents logging out when callee is offline
-    endCall();
-  });
+  call.on('close', () => { endCall(); });
   call.on('error', err => {
     console.error('Call error:', err);
     toast('Could not reach that person. They may be offline.');
-    // Clean up call state but stay in lobby
-    if (localStream) {
-      localStream.getTracks().forEach(t => t.stop());
-      localStream = null;
-    }
+    if (localStream) { localStream.getTracks().forEach(t => t.stop()); localStream = null; }
     currentCall = null;
     showScreen('lobby');
     resetStatusPill();
@@ -544,13 +552,21 @@ function initIncomingCallButtons() {
       if (!pendingCall) return;
 
       try {
-        localStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
+        localStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: true });
+        isCameraOn = true;
       } catch (err) {
-        handleMicError(err);
-        pendingCall.close();
-        pendingCall = null;
-        showScreen('lobby');
-        return;
+        // Camera denied — try audio only
+        try {
+          localStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
+          isCameraOn = false;
+          toast('Camera not available — voice only');
+        } catch (audioErr) {
+          handleMicError(audioErr);
+          pendingCall.close();
+          pendingCall = null;
+          showScreen('lobby');
+          return;
+        }
       }
 
       pendingCall.answer(localStream);
@@ -560,10 +576,16 @@ function initIncomingCallButtons() {
       if (currentCall.metadata?.account) rememberAccount(currentCall.metadata.account);
       const callerName = currentCall.metadata?.name || currentCall.peer;
       showActiveCallScreen(callerName, currentCall.peer);
+      updateCameraUI();
+      if (isCameraOn) {
+        attachLocalVideo(localStream);
+        showVideoArea();
+      }
 
       currentCall.on('stream', remoteStream => {
-        $('remote-audio').srcObject = remoteStream;
+        attachRemoteStream(remoteStream);
         $('call-status-badge').textContent = 'Connected';
+        if ($('call-status-badge-video')) $('call-status-badge-video').textContent = 'Connected';
         startCallTimer();
         setupVolumeMonitor(remoteStream);
       });
@@ -588,8 +610,14 @@ function showActiveCallScreen(name, peerId) {
   const displayName = name === peerId ? peerId : name;
   $('active-name').textContent = displayName;
   $('active-avatar').textContent = avatarLetter(displayName);
+  if ($('remote-video-avatar')) $('remote-video-avatar').textContent = avatarLetter(displayName);
   $('call-status-badge').textContent = 'Connecting...';
+  if ($('call-status-badge-video')) $('call-status-badge-video').textContent = 'Connecting...';
   $('call-timer').textContent = '0:00';
+  // Start with no-video layout
+  $('video-area').style.display = 'none';
+  $('no-video-display').style.display = 'flex';
+  if ($('call-status-badge-video')) $('call-status-badge-video').style.display = 'none';
   showScreen('call');
   $('status-pill').textContent = '● In a call';
   $('status-pill').className = 'pill pill-busy';
@@ -611,6 +639,10 @@ function endCall() {
     localStream.getTracks().forEach(t => t.stop());
     localStream = null;
   }
+  if (cameraStream) {
+    cameraStream.getTracks().forEach(t => t.stop());
+    cameraStream = null;
+  }
   if (audioCtx) {
     audioCtx.close();
     audioCtx = null;
@@ -620,10 +652,21 @@ function endCall() {
   clearInterval(volInterval);
   timerInterval = null;
   volInterval = null;
-  $('remote-audio').srcObject = null;
+  // Clear video elements
+  const remoteVideo = $('remote-video');
+  const localVideo = $('local-video');
+  const remoteAudio = $('remote-audio');
+  if (remoteVideo) remoteVideo.srcObject = null;
+  if (localVideo) localVideo.srcObject = null;
+  if (remoteAudio) remoteAudio.srcObject = null;
+  // Reset video UI
+  if ($('video-area')) $('video-area').style.display = 'none';
+  if ($('no-video-display')) $('no-video-display').style.display = 'flex';
   currentCall = null;
   isMuted = false;
+  isCameraOn = false;
   updateMuteUI();
+  updateCameraUI();
   resetVolBars();
   showScreen('lobby');
   resetStatusPill();
@@ -679,6 +722,125 @@ function resetVolBars() {
       b.classList.remove('active');
     }
   });
+}
+
+// ── Video helpers ────────────────────────────────────────────
+function attachLocalVideo(stream) {
+  const localVideo = $('local-video');
+  if (localVideo) localVideo.srcObject = stream;
+}
+
+function attachRemoteStream(stream) {
+  // Always wire audio
+  $('remote-audio').srcObject = stream;
+  // Wire video if the remote stream has a video track
+  const remoteVideo = $('remote-video');
+  const hasVideo = stream.getVideoTracks().length > 0;
+  if (remoteVideo && hasVideo) {
+    remoteVideo.srcObject = stream;
+    // Hide placeholder, show actual video element
+    const placeholder = $('remote-video-placeholder');
+    if (placeholder) placeholder.style.display = 'none';
+    remoteVideo.style.display = 'block';
+    // Show the video area since remote has video
+    showVideoArea();
+  } else if (remoteVideo) {
+    remoteVideo.style.display = 'none';
+    const placeholder = $('remote-video-placeholder');
+    if (placeholder) placeholder.style.display = 'flex';
+    // Only show video area if local camera is on
+    if (isCameraOn) showVideoArea();
+  }
+}
+
+function showVideoArea() {
+  $('video-area').style.display = 'block';
+  $('no-video-display').style.display = 'none';
+  const badge = $('call-status-badge-video');
+  if (badge) {
+    badge.textContent = $('call-status-badge').textContent;
+    badge.style.display = 'inline-block';
+  }
+}
+
+function hideVideoArea() {
+  $('video-area').style.display = 'none';
+  $('no-video-display').style.display = 'flex';
+  const badge = $('call-status-badge-video');
+  if (badge) badge.style.display = 'none';
+}
+
+// ── Camera toggle ────────────────────────────────────────────
+function initCameraButton() {
+  const btnCamera = $('btn-camera');
+  if (!btnCamera) return;
+  btnCamera.addEventListener('click', toggleCamera);
+}
+
+async function toggleCamera() {
+  if (!currentCall) return;
+
+  if (isCameraOn) {
+    // Turn off — stop video tracks, keep audio
+    if (localStream) {
+      localStream.getVideoTracks().forEach(t => { t.stop(); localStream.removeTrack(t); });
+    }
+    isCameraOn = false;
+    const localVideo = $('local-video');
+    if (localVideo) localVideo.srcObject = null;
+    hideVideoArea();
+    updateCameraUI();
+    toast('Camera off');
+  } else {
+    // Turn on — request camera access
+    try {
+      const videoStream = await navigator.mediaDevices.getUserMedia({ video: true });
+      const videoTrack = videoStream.getVideoTracks()[0];
+
+      if (!localStream) {
+        localStream = videoStream;
+      } else {
+        localStream.addTrack(videoTrack);
+      }
+
+      // Replace the video track in the ongoing call
+      if (currentCall?.peerConnection) {
+        const sender = currentCall.peerConnection.getSenders().find(s => s.track?.kind === 'video');
+        if (sender) {
+          sender.replaceTrack(videoTrack);
+        } else {
+          currentCall.peerConnection.addTrack(videoTrack, localStream);
+        }
+      }
+
+      isCameraOn = true;
+      attachLocalVideo(localStream);
+      showVideoArea();
+      updateCameraUI();
+      toast('Camera on');
+    } catch (err) {
+      console.error('Camera error:', err);
+      if (err.name === 'NotAllowedError') {
+        toast('Camera access denied. Allow it in site settings.');
+      } else if (err.name === 'NotFoundError') {
+        toast('No camera found on this device.');
+      } else {
+        toast('Could not turn on camera.');
+      }
+    }
+  }
+}
+
+function updateCameraUI() {
+  const btn = $('btn-camera');
+  const iconOn = $('cam-icon-on');
+  const iconOff = $('cam-icon-off');
+  if (!btn) return;
+  if (iconOn) iconOn.style.display = isCameraOn ? 'block' : 'none';
+  if (iconOff) iconOff.style.display = isCameraOn ? 'none' : 'block';
+  btn.classList.toggle('active', isCameraOn);
+  const span = btn.querySelector('span');
+  if (span) span.textContent = isCameraOn ? 'Cam On' : 'Camera';
 }
 
 // ── Mute ─────────────────────────────────────────────────────
@@ -751,5 +913,6 @@ initCallButton();
 initIncomingCallButtons();
 initHangupButton();
 initMuteButton();
+initCameraButton();
 initSpeakerButton();
 renderPeople();

@@ -606,3 +606,70 @@ input:disabled {
   body { overflow: auto; }
   .lobby-body { grid-template-columns: 1fr; max-width: 520px; }
 }
+
+/* ── Page scrolling fix ── */
+body {
+  overflow-x: hidden;
+  overflow-y: auto;
+}
+
+.screen.active {
+  justify-content: flex-start;
+}
+
+#screen-join.screen.active,
+#screen-incoming.screen.active,
+#screen-call.screen.active {
+  justify-content: center;
+}
+
+#screen-lobby.screen.active {
+  align-items: stretch;
+}
+
+/* ── Messages as its own tab ── */
+.top-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.nav-btn {
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: rgba(30,34,56,.78);
+  color: var(--text);
+  cursor: pointer;
+  font-family: 'Space Grotesk', sans-serif;
+  font-weight: 700;
+  padding: 8px 14px;
+  transition: border-color .2s ease, background .2s ease, transform .15s ease;
+}
+
+.nav-btn:hover {
+  border-color: var(--accent);
+  background: rgba(99,102,241,.16);
+}
+
+.nav-btn:active { transform: scale(.96); }
+
+.messages-body {
+  width: 100%;
+  max-width: 760px;
+  margin: 0 auto;
+  padding: 96px 24px 32px;
+}
+
+.messages-tab-card {
+  max-width: none;
+}
+
+.messages-tab-card .message-thread {
+  min-height: min(56dvh, 460px);
+}
+
+@media (max-width: 760px) {
+  .messages-body { padding: 88px 16px 28px; }
+  .top-actions { gap: 8px; }
+  .nav-btn { padding: 7px 11px; }
+}

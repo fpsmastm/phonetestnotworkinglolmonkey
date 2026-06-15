@@ -27,6 +27,26 @@ let timerInterval = null;
 let volInterval   = null;
 let audioCtx      = null;
 let analyser      = null;
+let dataConnections = new Map();
+let currentChatId = '';
+
+const ACCOUNT_KEY = 'linkup.account.v2';
+const DIRECTORY_KEY = 'linkup.directory.v2';
+const FRIENDS_KEY = 'linkup.friends.v2';
+const MESSAGES_KEY = 'linkup.messages.v2';
+
+const escapeHtml = value => String(value ?? '').replace(/[&<>"']/g, char => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[char]));
+
+const loadJson = (key, fallback) => {
+  try { return JSON.parse(localStorage.getItem(key)) ?? fallback; }
+  catch { return fallback; }
+};
+const saveJson = (key, value) => localStorage.setItem(key, JSON.stringify(value));
+
+let savedAccount = loadJson(ACCOUNT_KEY, null);
+let directory = loadJson(DIRECTORY_KEY, []);
+let friends = loadJson(FRIENDS_KEY, []);
+let messages = loadJson(MESSAGES_KEY, {});
 
 // ── Screen helper ────────────────────────────────────────────
 function showScreen(name) {
@@ -52,9 +72,20 @@ function avatarLetter(name) {
 // ── Generate friendly ID ─────────────────────────────────────
 // Short readable IDs so students can share them easily
 function friendlyId(name) {
-  const clean = name.toLowerCase().replace(/[^a-z0-9]/g, '').slice(0, 10);
-  const rand = Math.random().toString(36).slice(2, 6);
+  const clean = name.toLowerCase().replace(/[^a-z0-9]/g, '').slice(0, 10) || 'user';
+  const rand = Math.random().toString(36).slice(2, 8);
   return `${clean}-${rand}`;
+}
+
+function getOrCreateAccount(name) {
+  if (savedAccount?.id) {
+    savedAccount.name = name || savedAccount.name;
+  } else {
+    savedAccount = { id: friendlyId(name), name, createdAt: Date.now() };
+  }
+  saveJson(ACCOUNT_KEY, savedAccount);
+  rememberAccount(savedAccount);
+  return savedAccount;
 }
 
 // ── STEP 1: Join / Create ID ─────────────────────────────────
@@ -64,9 +95,10 @@ $('input-name').addEventListener('keydown', e => { if (e.key === 'Enter') startS
 function startSession() {
   const name = $('input-name').value.trim();
   if (!name) { toast('Enter your name first!'); $('input-name').focus(); return; }
-  myName = name;
+  const account = getOrCreateAccount(name);
+  myName = account.name;
 
-  const peerId = friendlyId(name);
+  const peerId = account.id;
 
   $('btn-start').textContent = 'Connecting…';
   $('btn-start').disabled = true;
@@ -87,16 +119,18 @@ function startSession() {
   peer.on('open', id => {
     $('my-peer-id').textContent = id;
     showScreen('lobby');
-    toast(`Welcome, ${name}! 🎉`);
+    toast(`Welcome back, ${myName}! 🎉`);
   });
 
   peer.on('error', err => {
     console.error('PeerJS error:', err);
     // If the ID is taken, retry with a new one
     if (err.type === 'unavailable-id') {
-      const newId = friendlyId(name) + '-' + Math.random().toString(36).slice(2, 4);
+      const newId = friendlyId(myName);
+      savedAccount.id = newId;
+      saveJson(ACCOUNT_KEY, savedAccount);
       peer.destroy();
-      startWithId(name, newId);
+      startWithId(myName, newId);
       return;
     }
     toast('Connection error: ' + err.message);
@@ -105,8 +139,9 @@ function startSession() {
     showScreen('join');
   });
 
-  // Incoming call handler
+  // Incoming call and message handlers
   peer.on('call', handleIncomingCall);
+  peer.on('connection', setupDataConnection);
 }
 
 function startWithId(name, id) {
@@ -125,8 +160,139 @@ function startWithId(name, id) {
     toast(`Welcome, ${name}! 🎉`);
   });
   peer.on('call', handleIncomingCall);
+  peer.on('connection', setupDataConnection);
   peer.on('error', err => toast('Error: ' + err.message));
 }
+
+
+// ── Saved account, directory, friends and messaging ───────────
+function rememberAccount(account) {
+  if (!account?.id) return;
+  const existing = directory.find(item => item.id === account.id);
+  const next = { id: account.id, name: account.name || account.id, lastSeen: Date.now() };
+  if (existing) Object.assign(existing, next);
+  else directory.unshift(next);
+  directory.sort((a, b) => (b.lastSeen || 0) - (a.lastSeen || 0));
+  saveJson(DIRECTORY_KEY, directory);
+  renderPeople();
+}
+
+function isFriend(id) { return friends.includes(id); }
+function addFriend(account) {
+  rememberAccount(account);
+  if (!isFriend(account.id)) {
+    friends.push(account.id);
+    saveJson(FRIENDS_KEY, friends);
+  }
+  renderPeople();
+}
+
+function renderPeople() {
+  const list = $('people-list');
+  if (!list) return;
+  const people = directory.filter(person => person.id !== savedAccount?.id);
+  list.innerHTML = people.length ? people.map(person => `
+    <button class="person-card" data-id="${escapeHtml(person.id)}" type="button">
+      <span class="mini-avatar">${escapeHtml(avatarLetter(person.name))}</span>
+      <span class="person-main"><strong>${escapeHtml(person.name)}</strong><small>${escapeHtml(person.id)}</small></span>
+      <span class="friend-chip">${isFriend(person.id) ? 'Friend' : 'Add'}</span>
+    </button>
+  `).join('') : '<p class="empty-state">No accounts discovered yet. Add someone by their ID to see them here.</p>';
+}
+
+function renderMessages(peerId) {
+  const thread = $('message-thread');
+  if (!thread) return;
+  const history = messages[peerId] || [];
+  thread.innerHTML = history.length ? history.map(msg => `
+    <div class="message ${msg.from === 'me' ? 'me' : 'them'}">
+      <span>${escapeHtml(msg.text)}</span>
+    </div>
+  `).join('') : '<p class="empty-state">No messages yet. Say hi!</p>';
+  thread.scrollTop = thread.scrollHeight;
+}
+
+function setActiveChat(peerId) {
+  currentChatId = peerId;
+  const person = directory.find(item => item.id === peerId) || { id: peerId, name: peerId };
+  $('chat-title').textContent = person.name;
+  $('chat-subtitle').textContent = person.id;
+  $('input-message').disabled = false;
+  $('btn-send').disabled = false;
+  renderMessages(peerId);
+}
+
+function addMessage(peerId, text, from) {
+  messages[peerId] = messages[peerId] || [];
+  messages[peerId].push({ text, from, at: Date.now() });
+  saveJson(MESSAGES_KEY, messages);
+  if (currentChatId === peerId) renderMessages(peerId);
+}
+
+function setupDataConnection(conn) {
+  dataConnections.set(conn.peer, conn);
+  conn.on('open', () => {
+    conn.send({ type: 'profile', account: savedAccount });
+  });
+  conn.on('data', data => {
+    if (data?.account) rememberAccount(data.account);
+    if (data?.type === 'profile') rememberAccount(data.account);
+    if (data?.type === 'message') {
+      rememberAccount(data.account);
+      addMessage(conn.peer, data.text, 'them');
+      toast(`New message from ${data.account?.name || conn.peer}`);
+    }
+  });
+  conn.on('close', () => dataConnections.delete(conn.peer));
+}
+
+function connectToPeer(peerId) {
+  if (!peer || dataConnections.has(peerId)) return dataConnections.get(peerId);
+  const conn = peer.connect(peerId, { metadata: { account: savedAccount } });
+  setupDataConnection(conn);
+  return conn;
+}
+
+$('btn-add-friend').addEventListener('click', () => {
+  const id = $('input-friend-id').value.trim();
+  if (!id) { toast('Enter their account ID first'); return; }
+  if (id === savedAccount?.id) { toast("That's your account"); return; }
+  addFriend({ id, name: id });
+  connectToPeer(id);
+  setActiveChat(id);
+  $('input-friend-id').value = '';
+  toast('Friend added');
+});
+
+$('people-list').addEventListener('click', e => {
+  const card = e.target.closest('.person-card');
+  if (!card) return;
+  const id = card.dataset.id;
+  const person = directory.find(item => item.id === id) || { id, name: id };
+  addFriend(person);
+  connectToPeer(id);
+  setActiveChat(id);
+});
+
+$('btn-send').addEventListener('click', sendMessage);
+$('input-message').addEventListener('keydown', e => { if (e.key === 'Enter') sendMessage(); });
+
+function sendMessage() {
+  const text = $('input-message').value.trim();
+  if (!currentChatId || !text) return;
+  const conn = connectToPeer(currentChatId);
+  const payload = { type: 'message', text, account: savedAccount };
+  if (conn?.open) conn.send(payload);
+  else conn?.once?.('open', () => conn.send(payload));
+  addMessage(currentChatId, text, 'me');
+  $('input-message').value = '';
+}
+
+if (savedAccount?.name) {
+  $('input-name').value = savedAccount.name;
+  $('btn-start').textContent = 'Continue as ' + savedAccount.name + ' →';
+}
+renderPeople();
 
 // ── Copy ID ──────────────────────────────────────────────────
 $('btn-copy').addEventListener('click', () => {
@@ -162,7 +328,7 @@ async function makeCall() {
   }
 
   const call = peer.call(targetId, localStream, {
-    metadata: { name: myName }
+    metadata: { name: myName, account: savedAccount }
   });
 
   if (!call) { toast('Could not reach that ID. Check it and try again.'); return; }
@@ -193,6 +359,7 @@ function handleIncomingCall(call) {
     return;
   }
   pendingCall = call;
+  if (call.metadata?.account) rememberAccount(call.metadata.account);
   const callerName = call.metadata?.name || call.peer;
   $('incoming-name').textContent = callerName;
   $('incoming-avatar').textContent = avatarLetter(callerName);
@@ -218,6 +385,7 @@ $('btn-accept').addEventListener('click', async () => {
   currentCall = pendingCall;
   pendingCall = null;
 
+  if (currentCall.metadata?.account) rememberAccount(currentCall.metadata.account);
   const callerName = currentCall.metadata?.name || currentCall.peer;
   showActiveCallScreen(callerName, currentCall.peer);
 

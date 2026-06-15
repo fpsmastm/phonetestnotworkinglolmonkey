@@ -475,14 +475,26 @@ async function makeCall() {
   if (targetId === $('my-peer-id')?.textContent) { toast("That's your own ID!"); return; }
   if (!peer) { toast('Not connected yet'); return; }
 
-  // Always start with audio-only for reliability — camera can be toggled on during call
+  // Request audio + video upfront so the WebRTC channel is negotiated for both.
+  // Camera starts MUTED (track.enabled = false) — user taps Camera to turn it on.
   try {
-    localStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
+    localStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: true });
   } catch (err) {
-    handleMicError(err);
-    return;
+    // Camera denied — try audio only (video button will be hidden)
+    try {
+      localStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
+    } catch (audioErr) {
+      handleMicError(audioErr);
+      return;
+    }
   }
+
+  // Disable video track by default — camera is "off" until user taps the button
+  localStream.getVideoTracks().forEach(t => { t.enabled = false; });
   isCameraOn = false;
+
+  // Show local preview (black until enabled, but element is ready)
+  attachLocalVideo(localStream);
 
   const call = peer.call(targetId, localStream, {
     metadata: { name: myName, account: savedAccount }
@@ -501,7 +513,7 @@ async function makeCall() {
     if ($('call-status-badge-video')) $('call-status-badge-video').textContent = 'Connected';
     startCallTimer();
     setupVolumeMonitor(remoteStream);
-    toast('Connected!');
+    toast('Connected! Tap Camera to share video.');
   });
 
   call.on('close', () => { endCall(); });
@@ -541,17 +553,26 @@ function initIncomingCallButtons() {
     btnAccept.addEventListener('click', async () => {
       if (!pendingCall) return;
 
-      // Start audio-only — camera toggled on during call if wanted
+      // Same as makeCall: get audio+video upfront, start with camera disabled
       try {
-        localStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
+        localStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: true });
       } catch (err) {
-        handleMicError(err);
-        pendingCall.close();
-        pendingCall = null;
-        showScreen('lobby');
-        return;
+        try {
+          localStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
+        } catch (audioErr) {
+          handleMicError(audioErr);
+          pendingCall.close();
+          pendingCall = null;
+          showScreen('lobby');
+          return;
+        }
       }
+
+      // Camera off by default
+      localStream.getVideoTracks().forEach(t => { t.enabled = false; });
       isCameraOn = false;
+
+      attachLocalVideo(localStream);
 
       pendingCall.answer(localStream);
       currentCall = pendingCall;
@@ -568,6 +589,7 @@ function initIncomingCallButtons() {
         if ($('call-status-badge-video')) $('call-status-badge-video').textContent = 'Connected';
         startCallTimer();
         setupVolumeMonitor(remoteStream);
+        toast('Connected! Tap Camera to share video.');
       });
 
       currentCall.on('close', endCall);
@@ -713,24 +735,41 @@ function attachLocalVideo(stream) {
 function attachRemoteStream(stream) {
   // Always wire audio
   $('remote-audio').srcObject = stream;
-  // Wire video if the remote stream has a video track
+
   const remoteVideo = $('remote-video');
-  const hasVideo = stream.getVideoTracks().length > 0;
-  if (remoteVideo && hasVideo) {
-    remoteVideo.srcObject = stream;
-    // Hide placeholder, show actual video element
+  if (!remoteVideo) return;
+
+  // Wire up the video element regardless — track may start disabled
+  remoteVideo.srcObject = stream;
+
+  // Show/hide video area based on whether any video track is enabled
+  function checkRemoteVideo() {
+    const hasActiveVideo = stream.getVideoTracks().some(t => t.enabled && t.readyState === 'live');
     const placeholder = $('remote-video-placeholder');
-    if (placeholder) placeholder.style.display = 'none';
-    remoteVideo.style.display = 'block';
-    // Show the video area since remote has video
-    showVideoArea();
-  } else if (remoteVideo) {
-    remoteVideo.style.display = 'none';
-    const placeholder = $('remote-video-placeholder');
-    if (placeholder) placeholder.style.display = 'flex';
-    // Only show video area if local camera is on
-    if (isCameraOn) showVideoArea();
+    if (hasActiveVideo) {
+      remoteVideo.style.display = 'block';
+      if (placeholder) placeholder.style.display = 'none';
+      showVideoArea();
+    } else {
+      remoteVideo.style.display = 'none';
+      if (placeholder) placeholder.style.display = 'flex';
+      // Only show video area if our own camera is on
+      if (!isCameraOn) hideVideoArea();
+    }
   }
+
+  checkRemoteVideo();
+
+  // Watch for remote track state changes (them turning camera on/off)
+  stream.getVideoTracks().forEach(track => {
+    track.addEventListener('unmute', checkRemoteVideo);
+    track.addEventListener('mute', checkRemoteVideo);
+    track.addEventListener('ended', checkRemoteVideo);
+  });
+
+  // Also poll briefly in case events fire before stream settles
+  setTimeout(checkRemoteVideo, 500);
+  setTimeout(checkRemoteVideo, 1500);
 }
 
 function showVideoArea() {
@@ -757,58 +796,30 @@ function initCameraButton() {
   btnCamera.addEventListener('click', toggleCamera);
 }
 
-async function toggleCamera() {
-  if (!currentCall) return;
+function toggleCamera() {
+  if (!currentCall || !localStream) return;
+
+  const videoTracks = localStream.getVideoTracks();
+  if (videoTracks.length === 0) {
+    toast('No camera available on this device.');
+    return;
+  }
+
+  isCameraOn = !isCameraOn;
+  videoTracks.forEach(t => { t.enabled = isCameraOn; });
 
   if (isCameraOn) {
-    // Turn off — stop video tracks, keep audio
-    if (localStream) {
-      localStream.getVideoTracks().forEach(t => { t.stop(); localStream.removeTrack(t); });
-    }
-    isCameraOn = false;
-    const localVideo = $('local-video');
-    if (localVideo) localVideo.srcObject = null;
-    hideVideoArea();
-    updateCameraUI();
-    toast('Camera off');
+    // Show local preview and video area
+    attachLocalVideo(localStream);
+    showVideoArea();
+    toast('Camera on');
   } else {
-    // Turn on — request camera access
-    try {
-      const videoStream = await navigator.mediaDevices.getUserMedia({ video: true });
-      const videoTrack = videoStream.getVideoTracks()[0];
-
-      if (!localStream) {
-        localStream = videoStream;
-      } else {
-        localStream.addTrack(videoTrack);
-      }
-
-      // Replace the video track in the ongoing call
-      if (currentCall?.peerConnection) {
-        const sender = currentCall.peerConnection.getSenders().find(s => s.track?.kind === 'video');
-        if (sender) {
-          sender.replaceTrack(videoTrack);
-        } else {
-          currentCall.peerConnection.addTrack(videoTrack, localStream);
-        }
-      }
-
-      isCameraOn = true;
-      attachLocalVideo(localStream);
-      showVideoArea();
-      updateCameraUI();
-      toast('Camera on');
-    } catch (err) {
-      console.error('Camera error:', err);
-      if (err.name === 'NotAllowedError') {
-        toast('Camera access denied. Allow it in site settings.');
-      } else if (err.name === 'NotFoundError') {
-        toast('No camera found on this device.');
-      } else {
-        toast('Could not turn on camera.');
-      }
-    }
+    // Hide video area, go back to avatar
+    hideVideoArea();
+    toast('Camera off');
   }
+
+  updateCameraUI();
 }
 
 function updateCameraUI() {
@@ -816,6 +827,11 @@ function updateCameraUI() {
   const iconOn = $('cam-icon-on');
   const iconOff = $('cam-icon-off');
   if (!btn) return;
+
+  // Hide camera button entirely if device has no camera
+  const hasCameraTrack = localStream && localStream.getVideoTracks().length > 0;
+  btn.style.display = hasCameraTrack ? '' : 'none';
+
   if (iconOn) iconOn.style.display = isCameraOn ? 'block' : 'none';
   if (iconOff) iconOff.style.display = isCameraOn ? 'none' : 'block';
   btn.classList.toggle('active', isCameraOn);

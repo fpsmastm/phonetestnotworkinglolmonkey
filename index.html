@@ -70,7 +70,7 @@
       <!-- Friends and account directory -->
       <div class="card people-card">
         <span class="eyebrow">Friends & accounts</span>
-        <p class="hint compact">Add an account ID to save it. Tap a saved account to open Messages in its own tab.</p>
+        <p class="hint compact">Add an account ID to save it, message it, and make it visible in your account list.</p>
         <label for="input-friend-id">Friend account ID</label>
         <div class="input-row">
           <input id="input-friend-id" type="text" placeholder="Paste an account ID" autocomplete="off" />
@@ -79,40 +79,13 @@
         <div id="people-list" class="people-list" aria-live="polite"></div>
       </div>
 
-
-      <!-- Recent / instructions -->
-      <div class="tips">
-        <div class="tip-item">
-          <span class="tip-num">1</span>
-          <span>Add a friend by account ID, then tap them to open the Messages tab</span>
-        </div>
-        <div class="tip-item">
-          <span class="tip-num">2</span>
-          <span>Choose any saved account from the list to view it</span>
-        </div>
-        <div class="tip-item">
-          <span class="tip-num">3</span>
-          <span>Messages are direct between browsers while both people are online</span>
-        </div>
-      </div>
-    </div>
-  </div>
-
-
-  <!-- SCREEN: Messages -->
-  <div id="screen-messages" class="screen">
-    <header class="top-bar">
-      <div class="brand-sm">📡 LinkUp</div>
-      <button id="btn-back-lobby" class="nav-btn" type="button">← Back</button>
-    </header>
-
-    <div class="messages-body">
-      <div class="card chat-card messages-tab-card">
+      <!-- Messaging -->
+      <div class="card chat-card">
         <span class="eyebrow">Messages</span>
         <div class="chat-header">
           <div>
             <h3 id="chat-title">Pick a friend</h3>
-            <p id="chat-subtitle">Choose an account from Friends & accounts to start messaging.</p>
+            <p id="chat-subtitle">Choose an account above to start messaging.</p>
           </div>
         </div>
         <div id="message-thread" class="message-thread">
@@ -121,6 +94,22 @@
         <div class="input-row chat-input">
           <input id="input-message" type="text" placeholder="Type a message" autocomplete="off" disabled />
           <button id="btn-send" class="btn btn-primary btn-icon" disabled>Send</button>
+        </div>
+      </div>
+
+      <!-- Recent / instructions -->
+      <div class="tips">
+        <div class="tip-item">
+          <span class="tip-num">1</span>
+          <span>Add a friend by account ID, then call or message them</span>
+        </div>
+        <div class="tip-item">
+          <span class="tip-num">2</span>
+          <span>Choose any saved account from the list to view it</span>
+        </div>
+        <div class="tip-item">
+          <span class="tip-num">3</span>
+          <span>Messages are direct between browsers while both people are online</span>
         </div>
       </div>
     </div>

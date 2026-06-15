@@ -180,14 +180,9 @@ function startWithId(name, id, attempt = 0) {
   });
   peer.on('call', handleIncomingCall);
   peer.on('connection', setupDataConnection);
-  peer.on('error', err => {
-    if (err.type === 'unavailable-id') {
-      retrySavedPeerId(name, id, attempt + 1);
-      return;
-    }
-    toast('Error: ' + err.message);
-  });
+  peer.on('error', err => toast('Error: ' + err.message));
 }
+renderPeople();
 
 
 // ── Saved account, directory, friends and messaging ───────────
@@ -245,9 +240,7 @@ function setActiveChat(peerId) {
   $('input-message').disabled = false;
   $('btn-send').disabled = false;
   renderMessages(peerId);
-  showScreen('messages');
 }
-
 
 function addMessage(peerId, text, from) {
   messages[peerId] = messages[peerId] || [];
@@ -301,8 +294,6 @@ $('people-list').addEventListener('click', e => {
   setActiveChat(id);
 });
 
-$('btn-open-messages').addEventListener('click', () => showScreen('messages'));
-$('btn-back-lobby').addEventListener('click', () => showScreen('lobby'));
 $('btn-send').addEventListener('click', sendMessage);
 $('input-message').addEventListener('keydown', e => { if (e.key === 'Enter') sendMessage(); });
 

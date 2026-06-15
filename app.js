@@ -48,6 +48,8 @@ let savedAccount = loadJson(ACCOUNT_KEY, null);
 let directory = loadJson(DIRECTORY_KEY, []);
 let friends = loadJson(FRIENDS_KEY, []);
 let messages = loadJson(MESSAGES_KEY, {});
+const PEER_ID_RETRY_LIMIT = 8;
+const PEER_ID_RETRY_DELAY = 1200;
 
 // ── Screen helper ────────────────────────────────────────────
 function showScreen(name) {
@@ -125,13 +127,9 @@ function startSession() {
 
   peer.on('error', err => {
     console.error('PeerJS error:', err);
-    // If the ID is taken, retry with a new one
+    // If the saved ID is briefly busy, keep retrying it instead of changing accounts
     if (err.type === 'unavailable-id') {
-      const newId = friendlyId(myName);
-      savedAccount.id = newId;
-      saveJson(ACCOUNT_KEY, savedAccount);
-      peer.destroy();
-      startWithId(myName, newId);
+      retrySavedPeerId(myName, peerId, 1);
       return;
     }
     toast('Connection error: ' + err.message);
@@ -145,8 +143,8 @@ function startSession() {
   peer.on('connection', setupDataConnection);
 }
 
-function startWithId(name, id) {
-  peer = new Peer(id, {
+function createPeer(id) {
+  return new Peer(id, {
     debug: 0,
     config: {
       iceServers: [
@@ -155,14 +153,40 @@ function startWithId(name, id) {
       ]
     }
   });
+}
+
+function retrySavedPeerId(name, id, attempt) {
+  peer?.destroy();
+  if (attempt > PEER_ID_RETRY_LIMIT) {
+    toast('That saved Call ID is still active in another tab. Close the other tab, then try again.', 6000);
+    $('btn-start').textContent = 'Reconnect saved account →';
+    $('btn-start').disabled = false;
+    showScreen('join');
+    return;
+  }
+
+  toast(`Reconnecting saved Call ID… (${attempt}/${PEER_ID_RETRY_LIMIT})`, 1600);
+  setTimeout(() => startWithId(name, id, attempt), PEER_ID_RETRY_DELAY);
+}
+
+function startWithId(name, id, attempt = 0) {
+  peer = createPeer(id);
   peer.on('open', newId => {
     $('my-peer-id').textContent = newId;
     showScreen('lobby');
-    toast(`Welcome, ${name}! 🎉`);
+    $('btn-start').textContent = 'Reconnect saved account →';
+    $('btn-start').disabled = false;
+    toast(`Welcome back, ${name}! 🎉`);
   });
   peer.on('call', handleIncomingCall);
   peer.on('connection', setupDataConnection);
-  peer.on('error', err => toast('Error: ' + err.message));
+  peer.on('error', err => {
+    if (err.type === 'unavailable-id') {
+      retrySavedPeerId(name, id, attempt + 1);
+      return;
+    }
+    toast('Error: ' + err.message);
+  });
 }
 
 

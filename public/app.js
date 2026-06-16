@@ -500,7 +500,7 @@ function setupDataConnection(conn) {
     }
     // Handle sound events from soundboard
     if (data?.type === 'sound') {
-      handleIncomingSound(data.soundName);
+      handleIncomingSound(data);
     }
     // Handle admin messages
     if (data?.type === 'admin_message') {
@@ -515,6 +515,10 @@ function setupDataConnection(conn) {
     dataConnections.delete(conn.peer);
     // Re-render people list to update online status
     renderPeople();
+  });
+  conn.on('error', err => {
+    console.log('Data connection error:', err);
+    // Don't remove from map on transient errors, only on close
   });
 }
 
@@ -1691,12 +1695,12 @@ function renderSoundboardSounds(container) {
     btn.addEventListener('click', () => {
       const index = parseInt(btn.dataset.index);
       const sound = allSounds[index];
-      playSound(sound.url);
+      playSound(sound.url, sound.name);
     });
   });
 }
 
-async function playSound(url) {
+async function playSound(url, soundName = null, isRemote = false) {
   if (!soundboardAudioContext) {
     toast('Audio not supported on this device');
     return;
@@ -1718,8 +1722,10 @@ async function playSound(url) {
     
     source.start(0);
     
-    // Also send to peers via data channel
-    broadcastSoundEvent(url.split('/').pop());
+    // Also send to peers via data channel (only if not already remote)
+    if (!isRemote) {
+      broadcastSoundEvent(url, soundName);
+    }
     
     toast('Playing sound...');
   } catch (err) {
@@ -1728,12 +1734,30 @@ async function playSound(url) {
   }
 }
 
-function broadcastSoundEvent(soundName) {
+function broadcastSoundEvent(url, soundName) {
+  // Determine if this is a remote URL or local blob
+  const isRemoteUrl = url.startsWith('http');
+  
   // Send sound event to all connected peers via data channel
   dataConnections.forEach((conn, peerId) => {
     if (conn && conn.open) {
       try {
-        conn.send({ type: 'sound', soundName: soundName });
+        if (isRemoteUrl) {
+          // For remote sounds, send the URL directly
+          conn.send({ 
+            type: 'sound', 
+            url: url, 
+            name: soundName || url.split('/').pop() 
+          });
+        } else {
+          // For local/custom sounds, we can't share blob URLs
+          // Just send the name as a notification
+          conn.send({ 
+            type: 'sound', 
+            name: soundName || 'Custom Sound',
+            isCustom: true
+          });
+        }
       } catch (err) {
         console.log('Failed to send sound to peer:', peerId);
       }
@@ -1741,15 +1765,24 @@ function broadcastSoundEvent(soundName) {
   });
 }
 
-function handleIncomingSound(soundName) {
-  // Find and play the sound
-  const sound = [...defaultSounds, ...customSounds].find(s => 
-    s.url.split('/').pop() === soundName || s.name === soundName
-  );
-  if (sound) {
-    playSound(sound.url);
+function handleIncomingSound(data) {
+  // data can be either { url, name } for remote sounds or { name, isCustom } for custom
+  if (data.url) {
+    // Remote sound with URL - play it directly
+    playSound(data.url, data.name, true);
+  } else if (data.isCustom) {
+    // Custom sound from another peer - just show notification
+    toast(`🔊 ${data.name} (played by peer)`);
   } else {
-    toast(`🔊 ${soundName}`);
+    // Legacy format - try to find sound by name
+    const sound = [...defaultSounds, ...customSounds].find(s => 
+      s.url.split('/').pop() === data.name || s.name === data.name
+    );
+    if (sound) {
+      playSound(sound.url, sound.name, true);
+    } else {
+      toast(`🔊 ${data.name}`);
+    }
   }
 }
 
@@ -1879,13 +1912,16 @@ function activateAdminMode() {
   if (adminUserSelect) {
     adminUserSelect.innerHTML = '<option value="">Select User...</option>';
     
+    let hasUsers = false;
+    
     // Add group call participants
-    if (Array.isArray(currentCall)) {
+    if (Array.isArray(currentCall) && groupCallParticipants.length > 0) {
       groupCallParticipants.forEach(participant => {
         const option = document.createElement('option');
-        option.value = participant.id;
-        option.textContent = participant.name || participant.id;
+        option.value = participant.id || participant;
+        option.textContent = participant.name || participant;
         adminUserSelect.appendChild(option);
+        hasUsers = true;
       });
     }
     
@@ -1897,8 +1933,17 @@ function activateAdminMode() {
         option.value = peerId;
         option.textContent = person?.name || peerId;
         adminUserSelect.appendChild(option);
+        hasUsers = true;
       }
     });
+    
+    // If no users found, show message
+    if (!hasUsers) {
+      const option = document.createElement('option');
+      option.textContent = 'No active connections';
+      option.disabled = true;
+      adminUserSelect.appendChild(option);
+    }
   }
   
   toast('🔧 Admin Mode Activated!', 2000);

@@ -569,6 +569,12 @@ input:-webkit-autofill:focus {
   box-shadow: 0 8px 40px rgba(0,0,0,.5);
   margin-bottom: 8px;
   flex-shrink: 0;
+  cursor: pointer;
+  transition: transform 0.2s ease;
+}
+
+.video-area:hover {
+  transform: scale(1.02);
 }
 
 .remote-video {
@@ -591,6 +597,11 @@ input:-webkit-autofill:focus {
   background: #222;
   z-index: 2;
   transform: scaleX(-1); /* mirror selfie view */
+  cursor: pointer;
+}
+
+.local-video:hover {
+  border-color: var(--accent);
 }
 
 .video-placeholder {

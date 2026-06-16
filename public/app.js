@@ -1387,16 +1387,16 @@ function initFullScreenHover() {
     }
   };
   
-  // Hover over remote video to enter fullscreen
-  remoteVideo.addEventListener('mouseenter', () => {
+  // Click on remote video to enter fullscreen
+  remoteVideo.addEventListener('click', () => {
     if (remoteVideo.srcObject && remoteVideo.srcObject.getVideoTracks().length > 0) {
       toggleFullScreen(remoteVideo);
     }
   });
   
-  // Also allow hover on local video for screen share
+  // Also allow click on local video for screen share
   if (localVideo) {
-    localVideo.addEventListener('mouseenter', () => {
+    localVideo.addEventListener('click', () => {
       if (isScreenOn && localVideo.srcObject && localVideo.srcObject.getVideoTracks().length > 0) {
         toggleFullScreen(videoArea);
       }
@@ -1740,14 +1740,21 @@ function initAdminEasterEgg() {
 }
 
 function activateAdminMode() {
-  if (isAdminMode) return;
+  // Allow reopening the admin panel by toggling
+  const wasOpen = isAdminMode;
   
-  isAdminMode = true;
   const adminPanel = $('admin-panel');
   const adminUserSelect = $('admin-user-select');
   
   if (adminPanel) {
-    adminPanel.style.display = 'block';
+    if (wasOpen) {
+      adminPanel.style.display = 'none';
+      isAdminMode = false;
+      return;
+    } else {
+      adminPanel.style.display = 'block';
+      isAdminMode = true;
+    }
   }
   
   // Populate user select with current participants

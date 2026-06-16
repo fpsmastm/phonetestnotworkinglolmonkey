@@ -1760,6 +1760,11 @@ async function playSound(url, soundName = null, isRemote = false, audioData = nu
       if (!response.ok) throw new Error(`HTTP ${response.status}`);
       arrayBuffer = await response.arrayBuffer();
       console.log('Fetched audio data, size:', arrayBuffer.byteLength);
+      
+      // CRITICAL FIX: Create a copy BEFORE decoding to avoid detachment
+      // The decodeAudioData() detaches the original buffer, so we need a fresh copy for broadcasting
+      arrayBufferForBroadcast = arrayBuffer.slice(0);
+      console.log('Created copy for broadcasting, size:', arrayBufferForBroadcast.byteLength);
     }
     
     const audioBuffer = await soundboardAudioContext.decodeAudioData(arrayBuffer);
@@ -1779,9 +1784,9 @@ async function playSound(url, soundName = null, isRemote = false, audioData = nu
     
     // Always broadcast to peers with the audio data we just fetched
     // This ensures everyone gets the actual audio bytes, not just a URL
-    if (!isRemote && arrayBuffer) {
+    if (!isRemote && arrayBufferForBroadcast) {
       console.log('Broadcasting sound to peers...');
-      broadcastSoundEvent(url, soundName, arrayBuffer);
+      broadcastSoundEvent(url, soundName, arrayBufferForBroadcast);
     } else if (isRemote) {
       console.log('This is a remote sound, not broadcasting');
     } else {

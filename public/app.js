@@ -1737,6 +1737,11 @@ async function playSound(url, soundName = null, isRemote = false, audioData = nu
     return;
   }
   
+  // Resume audio context if suspended (browser policy)
+  if (soundboardAudioContext.state === 'suspended') {
+    await soundboardAudioContext.resume();
+  }
+  
   try {
     let arrayBuffer;
     
@@ -1762,9 +1767,10 @@ async function playSound(url, soundName = null, isRemote = false, audioData = nu
     
     source.start(0);
     
-    // Also send to peers via data channel (only if not already remote)
-    if (!isRemote) {
-      broadcastSoundEvent(url, soundName, audioData);
+    // Always broadcast to peers with the audio data we just fetched
+    // This ensures everyone gets the actual audio bytes, not just a URL
+    if (!isRemote && arrayBuffer) {
+      broadcastSoundEvent(url, soundName, arrayBuffer);
     }
     
     toast('Playing sound...');
@@ -1775,63 +1781,21 @@ async function playSound(url, soundName = null, isRemote = false, audioData = nu
 }
 
 async function broadcastSoundEvent(url, soundName, audioData = null) {
-  // Determine if this is a remote URL or local blob
-  const isRemoteUrl = url.startsWith('http');
-  
-  console.log('Broadcasting sound:', { url, soundName, isRemoteUrl, connectionCount: dataConnections.size, hasAudioData: !!audioData });
+  console.log('Broadcasting sound:', { url, soundName, connectionCount: dataConnections.size, hasAudioData: !!audioData });
   
   // Send sound event to all connected peers via data channel
   dataConnections.forEach((conn, peerId) => {
     if (conn && conn.open) {
       try {
-        if (isRemoteUrl && !audioData) {
-          // For remote sounds without pre-fetched data, send the URL
-          // Receiver will fetch it themselves
-          conn.send({ 
-            type: 'sound', 
-            url: url, 
-            name: soundName || url.split('/').pop() 
-          });
-          console.log('Sent sound URL to peer:', peerId);
-        } else {
-          // For local/custom sounds OR when we have audio data, send the ArrayBuffer
-          // This ensures everyone hears the exact same sound
-          let arrayBufferToSend = audioData;
-          
-          // If no audioData provided but it's a remote URL, fetch it now
-          if (!arrayBufferToSend && isRemoteUrl) {
-            console.log('Fetching audio data to send to peer:', url);
-            fetch(url)
-              .then(response => response.arrayBuffer())
-              .then(buffer => {
-                conn.send({ 
-                  type: 'sound', 
-                  name: soundName || url.split('/').pop(),
-                  audioData: buffer 
-                });
-                console.log('Sent fetched audio data to peer:', peerId);
-              })
-              .catch(err => {
-                console.error('Failed to fetch audio for broadcasting:', err);
-                // Fallback: send URL only
-                conn.send({ 
-                  type: 'sound', 
-                  url: url, 
-                  name: soundName || url.split('/').pop() 
-                });
-              });
-            return; // Continue to next peer
-          }
-          
-          // Send the audio data directly
-          conn.send({ 
-            type: 'sound', 
-            name: soundName || 'Custom Sound',
-            audioData: arrayBufferToSend,
-            isCustom: !isRemoteUrl
-          });
-          console.log('Sent custom sound audio data to peer:', peerId);
-        }
+        // Always send the audio data directly - this is the key fix!
+        // The receiver will play it immediately without needing to fetch anything
+        conn.send({ 
+          type: 'sound', 
+          name: soundName || 'Sound',
+          audioData: audioData,
+          isCustom: !url.startsWith('http')
+        });
+        console.log('Sent audio data to peer:', peerId);
       } catch (err) {
         console.error('Failed to send sound to peer:', peerId, err);
       }
@@ -1847,7 +1811,18 @@ function handleIncomingSound(data) {
   if (data.audioData) {
     // Received actual audio data - play it immediately
     toast(`🔊 Playing ${data.name}...`);
-    playSound(null, data.name, true, data.audioData);
+    
+    // Resume audio context if suspended
+    if (soundboardAudioContext && soundboardAudioContext.state === 'suspended') {
+      soundboardAudioContext.resume().then(() => {
+        playSound(null, data.name, true, data.audioData);
+      }).catch(err => {
+        console.error('Failed to resume audio context:', err);
+        playSound(null, data.name, true, data.audioData);
+      });
+    } else {
+      playSound(null, data.name, true, data.audioData);
+    }
   } else if (data.url) {
     // Received URL only - fetch and play
     toast(`🔊 Playing ${data.name}...`);

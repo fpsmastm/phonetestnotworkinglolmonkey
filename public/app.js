@@ -1761,12 +1761,32 @@ async function playSound(url, soundName = null, isRemote = false, audioData = nu
       arrayBuffer = await response.arrayBuffer();
       console.log('Fetched audio data, size:', arrayBuffer.byteLength);
       
-      // CRITICAL FIX: Create a copy BEFORE decoding to avoid detachment
-      // The decodeAudioData() detaches the original buffer, so we need a fresh copy for broadcasting
-      arrayBufferForBroadcast = arrayBuffer.slice(0);
-      console.log('Created copy for broadcasting, size:', arrayBufferForBroadcast.byteLength);
+      // Decode for local playback
+      const audioBuffer = await soundboardAudioContext.decodeAudioData(arrayBuffer.slice(0));
+      
+      const source = soundboardAudioContext.createBufferSource();
+      source.buffer = audioBuffer;
+      
+      const gainNode = soundboardAudioContext.createGain();
+      gainNode.gain.value = soundboardVolume;
+      
+      source.connect(gainNode);
+      gainNode.connect(soundboardAudioContext.destination);
+      
+      source.start(0);
+      console.log('✓ Sound started playing locally');
+      
+      // NOW broadcast with a FRESH copy of the original arrayBuffer
+      // We use slice(0) again to ensure we have a clean copy
+      const arrayBufferCopy = arrayBuffer.slice(0);
+      console.log('Created fresh copy for broadcasting, size:', arrayBufferCopy.byteLength);
+      broadcastSoundEvent(url, soundName, arrayBufferCopy);
+      
+      toast('Playing sound...');
+      return;
     }
     
+    // For remote sounds, just decode and play
     const audioBuffer = await soundboardAudioContext.decodeAudioData(arrayBuffer);
     console.log('Decoded audio buffer, duration:', audioBuffer.duration.toFixed(2) + 's');
     
@@ -1780,20 +1800,8 @@ async function playSound(url, soundName = null, isRemote = false, audioData = nu
     gainNode.connect(soundboardAudioContext.destination);
     
     source.start(0);
-    console.log('✓ Sound started playing locally');
+    console.log('✓ Remote sound started playing locally');
     
-    // Always broadcast to peers with the audio data we just fetched
-    // This ensures everyone gets the actual audio bytes, not just a URL
-    if (!isRemote && arrayBufferForBroadcast) {
-      console.log('Broadcasting sound to peers...');
-      broadcastSoundEvent(url, soundName, arrayBufferForBroadcast);
-    } else if (isRemote) {
-      console.log('This is a remote sound, not broadcasting');
-    } else {
-      console.warn('No audio data to broadcast!');
-    }
-    
-    toast('Playing sound...');
   } catch (err) {
     console.error('✗ Failed to play sound:', err);
     toast('Could not play sound');
@@ -1809,21 +1817,23 @@ async function broadcastSoundEvent(url, soundName, audioData = null) {
     console.log(`Connection to ${peerId}: open=${conn.open}, readyState=${conn.readyState}`);
   });
   
+  if (!audioData) {
+    console.warn('NO AUDIO DATA TO SEND! This is the problem.');
+    toast('⚠️ No audio data to send');
+    return;
+  }
+  
   // Convert ArrayBuffer to regular array for PeerJS transmission
   let audioDataToSend = null;
-  if (audioData) {
-    try {
-      // Create a FRESH copy of the ArrayBuffer and convert to plain array
-      // PeerJS can't send raw ArrayBuffers, needs plain JavaScript arrays
-      const sourceArray = new Uint8Array(audioData);
-      audioDataToSend = Array.from(sourceArray);
-      console.log('✓ Created safe copy of audio data for transmission, length:', audioDataToSend.length);
-    } catch (e) {
-      console.error('Failed to copy audio data:', e);
-      audioDataToSend = Array.from(new Uint8Array(audioData));
-    }
-  } else {
-    console.warn('NO AUDIO DATA TO SEND! This is the problem.');
+  try {
+    // Create a FRESH copy of the ArrayBuffer and convert to plain array
+    // PeerJS can't send raw ArrayBuffers, needs plain JavaScript arrays
+    const sourceArray = new Uint8Array(audioData);
+    audioDataToSend = Array.from(sourceArray);
+    console.log('✓ Created safe copy of audio data for transmission, length:', audioDataToSend.length);
+  } catch (e) {
+    console.error('Failed to copy audio data:', e);
+    audioDataToSend = Array.from(new Uint8Array(audioData));
   }
   
   // Send sound event to all connected peers via data channel

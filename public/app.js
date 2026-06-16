@@ -24,6 +24,8 @@ let localStream   = null;
 let isMuted       = false;
 let isCameraOn    = false;
 let cameraStream  = null;
+let screenStream  = null;
+let isScreenOn    = false;
 let callStartTime = null;
 let timerInterval = null;
 let volInterval   = null;
@@ -796,6 +798,10 @@ function endCall() {
     cameraStream.getTracks().forEach(t => t.stop());
     cameraStream = null;
   }
+  if (screenStream) {
+    screenStream.getTracks().forEach(t => t.stop());
+    screenStream = null;
+  }
   if (audioCtx) {
     audioCtx.close();
     audioCtx = null;
@@ -818,8 +824,10 @@ function endCall() {
   currentCall = null;
   isMuted = false;
   isCameraOn = false;
+  isScreenOn = false;
   updateMuteUI();
   updateCameraUI();
+  updateScreenUI();
   resetVolBars();
   showScreen('lobby');
   resetStatusPill();
@@ -1030,6 +1038,160 @@ function initSpeakerButton() {
   });
 }
 
+// ── Screen Sharing ────────────────────────────────────────────
+async function toggleScreenShare() {
+  if (!currentCall && !Array.isArray(currentCall)) return;
+  
+  if (isScreenOn) {
+    // Stop screen sharing
+    if (screenStream) {
+      screenStream.getTracks().forEach(t => t.stop());
+      screenStream = null;
+    }
+    isScreenOn = false;
+    
+    // Re-enable camera if it was on before
+    if (cameraStream && localStream) {
+      const videoTrack = localStream.getVideoTracks()[0];
+      if (videoTrack) {
+        videoTrack.enabled = true;
+      }
+      attachLocalVideo(localStream);
+    }
+    
+    toast('Screen sharing stopped');
+  } else {
+    // Start screen sharing
+    try {
+      screenStream = await navigator.mediaDevices.getDisplayMedia({ 
+        video: { cursor: "always" },
+        audio: false 
+      });
+      
+      isScreenOn = true;
+      
+      // Replace the video track in the call with screen share track
+      const screenTrack = screenStream.getVideoTracks()[0];
+      
+      if (localStream) {
+        // Disable camera track but keep it
+        const videoTrack = localStream.getVideoTracks()[0];
+        if (videoTrack) {
+          videoTrack.enabled = false;
+        }
+        
+        // Add screen track to local stream for preview
+        localStream.addTrack(screenTrack.clone());
+      }
+      
+      // Send screen track to all participants
+      if (Array.isArray(currentCall)) {
+        currentCall.forEach(call => {
+          if (call && call.peerConnection) {
+            const sender = call.peerConnection.getSenders().find(s => s.track && s.track.kind === 'video');
+            if (sender) {
+              sender.replaceTrack(screenTrack.clone());
+            }
+          }
+        });
+      } else if (currentCall && currentCall.peerConnection) {
+        const sender = currentCall.peerConnection.getSenders().find(s => s.track && s.track.kind === 'video');
+        if (sender) {
+          sender.replaceTrack(screenTrack.clone());
+        }
+      }
+      
+      // Show screen in local preview
+      if (localStream) {
+        attachLocalVideo(screenStream);
+      }
+      showVideoArea();
+      
+      // Listen for user stopping via browser UI
+      screenTrack.onended = () => {
+        toggleScreenShare();
+      };
+      
+      toast('Screen sharing started');
+    } catch (err) {
+      console.error('Screen share error:', err);
+      toast('Could not start screen sharing');
+      isScreenOn = false;
+    }
+  }
+  
+  updateScreenUI();
+}
+
+function updateScreenUI() {
+  const btn = $('btn-screen');
+  const iconOn = $('screen-icon-on');
+  const iconOff = $('screen-icon-off');
+  if (!btn) return;
+  
+  if (iconOn) iconOn.style.display = isScreenOn ? 'block' : 'none';
+  if (iconOff) iconOff.style.display = isScreenOn ? 'none' : 'block';
+  btn.classList.toggle('active', isScreenOn);
+  const span = btn.querySelector('span');
+  if (span) span.textContent = isScreenOn ? 'Stop Share' : 'Screen';
+}
+
+function initScreenButton() {
+  const btnScreen = $('btn-screen');
+  if (!btnScreen) return;
+  btnScreen.addEventListener('click', toggleScreenShare);
+}
+
+// ── Full Screen on Hover ─────────────────────────────────────
+function initFullScreenHover() {
+  const videoArea = $('video-area');
+  const remoteVideo = $('remote-video');
+  const localVideo = $('local-video');
+  
+  if (!videoArea || !remoteVideo) return;
+  
+  // Helper function to toggle fullscreen
+  const toggleFullScreen = async (element) => {
+    try {
+      if (!document.fullscreenElement) {
+        if (element.requestFullscreen) {
+          await element.requestFullscreen();
+        } else if (element.webkitRequestFullscreen) {
+          await element.webkitRequestFullscreen();
+        } else if (element.msRequestFullscreen) {
+          await element.msRequestFullscreen();
+        }
+      } else {
+        if (document.exitFullscreen) {
+          await document.exitFullscreen();
+        } else if (document.webkitExitFullscreen) {
+          await document.webkitExitFullscreen();
+        } else if (document.msExitFullscreen) {
+          await document.msExitFullscreen();
+        }
+      }
+    } catch (err) {
+      console.error('Fullscreen error:', err);
+    }
+  };
+  
+  // Hover over remote video to enter fullscreen
+  remoteVideo.addEventListener('mouseenter', () => {
+    if (remoteVideo.srcObject && remoteVideo.srcObject.getVideoTracks().length > 0) {
+      toggleFullScreen(remoteVideo);
+    }
+  });
+  
+  // Also allow hover on local video for screen share
+  if (localVideo) {
+    localVideo.addEventListener('mouseenter', () => {
+      if (isScreenOn && localVideo.srcObject && localVideo.srcObject.getVideoTracks().length > 0) {
+        toggleFullScreen(videoArea);
+      }
+    });
+  }
+}
+
 // ── Mic error helper ─────────────────────────────────────────
 function handleMicError(err) {
   console.error('Mic error:', err);
@@ -1061,5 +1223,7 @@ initIncomingCallButtons();
 initHangupButton();
 initMuteButton();
 initCameraButton();
+initScreenButton();
 initSpeakerButton();
+initFullScreenHover();
 renderPeople();

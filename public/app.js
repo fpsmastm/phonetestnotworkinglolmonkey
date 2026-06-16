@@ -787,6 +787,12 @@ async function startGroupCall() {
     
     if (call) {
       calls.push(call);
+      
+      // Establish data connection for this call participant
+      setTimeout(() => {
+        connectToPeer(targetId);
+      }, 500);
+      
       call.on('stream', remoteStream => {
         attachRemoteStream(remoteStream);
         $('call-status-badge').textContent = `Connected to ${targetId}`;
@@ -861,6 +867,11 @@ async function startCall(targetId) {
     return;
   }
 
+  // Establish data connection for soundboard and messaging during call
+  setTimeout(() => {
+    connectToPeer(targetId);
+  }, 500);
+
   call.on('stream', remoteStream => {
     attachRemoteStream(remoteStream);
     $('call-status-badge').textContent = 'Connected';
@@ -923,6 +934,11 @@ async function makeCall() {
   });
 
   if (!call) { toast('Could not reach that ID'); return; }
+
+  // Establish data connection for soundboard and messaging during call
+  setTimeout(() => {
+    connectToPeer(targetId);
+  }, 500);
 
   currentCall = call;
   showActiveCallScreen('Calling...', targetId);

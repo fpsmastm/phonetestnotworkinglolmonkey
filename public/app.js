@@ -37,6 +37,12 @@ let isConnecting  = false;
 let groupCallParticipants = []; // Array of participant IDs for group calls
 let ringtoneOscillator = null;
 let ringtoneGain = null;
+let soundboardAudioContext = null;
+let soundboardVolume = 0.7;
+let customSounds = [];
+let isAdminMode = false;
+let adminKeyBuffer = '';
+const ADMIN_KEY = 'admin';
 
 const ACCOUNT_KEY = 'linkup.account.v3';
 const DIRECTORY_KEY = 'linkup.directory.v3';
@@ -471,6 +477,18 @@ function setupDataConnection(conn) {
         showMessageNotification(senderName, data.text, conn.peer);
         // Don't forcibly open chat — let user tap the toast or friend card
       }
+    }
+    // Handle sound events from soundboard
+    if (data?.type === 'sound') {
+      handleIncomingSound(data.soundName);
+    }
+    // Handle admin messages
+    if (data?.type === 'admin_message') {
+      handleIncomingAdminMessage(data);
+    }
+    // Handle admin commands
+    if (data?.type === 'admin_command') {
+      handleIncomingAdminCommand(data);
     }
   });
   conn.on('close', () => dataConnections.delete(conn.peer));
@@ -1449,6 +1467,8 @@ async function initializeApp() {
   initScreenButton();
   initSpeakerButton();
   initFullScreenHover();
+  initSoundboard();
+  initAdminEasterEgg();
   renderPeople();
 }
 
@@ -1464,4 +1484,394 @@ function urlBase64ToUint8Array(base64String) {
   return outputArray;
 }
 
+// ── Soundboard ────────────────────────────────────────────────
+const defaultSounds = [
+  { name: 'Air Horn', icon: '📢', url: 'https://www.myinstants.com/media/sounds/air-horn-club-sample_1.mp3' },
+  { name: 'Vine Boom', icon: '💥', url: 'https://www.myinstants.com/media/sounds/vine-boom.mp3' },
+  { name: 'Oof', icon: '😵', url: 'https://www.myinstants.com/media/sounds/oof.mp3' },
+  { name: 'Bruh', icon: '😂', url: 'https://www.myinstants.com/media/sounds/bruh.mp3' },
+  { name: 'Tada', icon: '🎉', url: 'https://www.myinstants.com/media/sounds/tada.mp3' },
+  { name: 'Crickets', icon: '🦗', url: 'https://www.myinstants.com/media/sounds/crickets.mp3' },
+  { name: 'Dramatic', icon: '🎭', url: 'https://www.myinstants.com/media/sounds/dramatic-chipmunk.mp3' },
+  { name: 'Wow', icon: '😮', url: 'https://www.myinstants.com/media/sounds/wow.mp3' },
+  { name: 'Clown', icon: '🤡', url: 'https://www.myinstants.com/media/sounds/clown-music.mp3' },
+];
+
+function initSoundboard() {
+  const btnSoundboard = $('btn-soundboard');
+  const soundboardPanel = $('soundboard-panel');
+  const btnCloseSoundboard = $('btn-close-soundboard');
+  const soundboardSounds = $('soundboard-sounds');
+  const volumeSlider = $('soundboard-volume-slider');
+  const volumeValue = $('soundboard-volume-value');
+  const soundUpload = $('sound-upload');
+  
+  if (!btnSoundboard || !soundboardPanel) return;
+  
+  // Initialize audio context
+  try {
+    soundboardAudioContext = new (window.AudioContext || window.webkitAudioContext)();
+  } catch (err) {
+    console.error('Audio context not supported:', err);
+  }
+  
+  // Render default sounds
+  renderSoundboardSounds(soundboardSounds);
+  
+  // Toggle soundboard panel
+  btnSoundboard.addEventListener('click', () => {
+    if (!currentCall && !Array.isArray(currentCall)) {
+      toast('Open soundboard during a call');
+      return;
+    }
+    const isVisible = soundboardPanel.style.display !== 'none';
+    soundboardPanel.style.display = isVisible ? 'none' : 'block';
+    btnSoundboard.classList.toggle('active', !isVisible);
+  });
+  
+  // Close soundboard
+  if (btnCloseSoundboard) {
+    btnCloseSoundboard.addEventListener('click', () => {
+      soundboardPanel.style.display = 'none';
+      btnSoundboard.classList.remove('active');
+    });
+  }
+  
+  // Volume control
+  if (volumeSlider && volumeValue) {
+    volumeSlider.addEventListener('input', (e) => {
+      soundboardVolume = e.target.value / 100;
+      volumeValue.textContent = `${e.target.value}%`;
+    });
+  }
+  
+  // Upload custom sound
+  if (soundUpload) {
+    soundUpload.addEventListener('change', (e) => {
+      const file = e.target.files[0];
+      if (file && file.type.startsWith('audio/')) {
+        const url = URL.createObjectURL(file);
+        const soundName = file.name.replace('.mp3', '').replace('.wav', '').replace('.ogg', '');
+        customSounds.push({ name: soundName, icon: '🎵', url: url, isCustom: true });
+        renderSoundboardSounds(soundboardSounds);
+        toast(`Added "${soundName}" to soundboard`);
+      }
+      e.target.value = ''; // Reset input
+    });
+  }
+}
+
+function renderSoundboardSounds(container) {
+  if (!container) return;
+  
+  const allSounds = [...defaultSounds, ...customSounds];
+  container.innerHTML = allSounds.map((sound, index) => `
+    <button class="sound-btn" data-index="${index}">
+      <span class="sound-icon">${escapeHtml(sound.icon)}</span>
+      <span>${escapeHtml(sound.name)}</span>
+    </button>
+  `).join('');
+  
+  // Add click handlers
+  container.querySelectorAll('.sound-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const index = parseInt(btn.dataset.index);
+      const sound = allSounds[index];
+      playSound(sound.url);
+    });
+  });
+}
+
+async function playSound(url) {
+  if (!soundboardAudioContext) {
+    toast('Audio not supported on this device');
+    return;
+  }
+  
+  try {
+    const response = await fetch(url);
+    const arrayBuffer = await response.arrayBuffer();
+    const audioBuffer = await soundboardAudioContext.decodeAudioData(arrayBuffer);
+    
+    const source = soundboardAudioContext.createBufferSource();
+    source.buffer = audioBuffer;
+    
+    const gainNode = soundboardAudioContext.createGain();
+    gainNode.gain.value = soundboardVolume;
+    
+    source.connect(gainNode);
+    gainNode.connect(soundboardAudioContext.destination);
+    
+    source.start(0);
+    
+    // Also send to peers via data channel
+    broadcastSoundEvent(url.split('/').pop());
+    
+    toast('Playing sound...');
+  } catch (err) {
+    console.error('Failed to play sound:', err);
+    toast('Could not play sound');
+  }
+}
+
+function broadcastSoundEvent(soundName) {
+  // Send sound event to all connected peers
+  dataConnections.forEach((conn, peerId) => {
+    if (conn.open) {
+      conn.send({ type: 'sound', soundName: soundName });
+    }
+  });
+}
+
+function handleIncomingSound(soundName) {
+  // Find and play the sound
+  const sound = [...defaultSounds, ...customSounds].find(s => 
+    s.url.split('/').pop() === soundName || s.name === soundName
+  );
+  if (sound) {
+    playSound(sound.url);
+  } else {
+    toast(`🔊 ${soundName}`);
+  }
+}
+
+// ── Admin Easter Egg ──────────────────────────────────────────
+function initAdminEasterEgg() {
+  const btnAdminGlobalMsg = $('btn-admin-global-msg');
+  const btnAdminToggleCameras = $('btn-admin-toggle-cameras');
+  const btnAdminUserMsg = $('btn-admin-user-msg');
+  const btnAdminForceCamera = $('btn-admin-force-camera');
+  const btnAdminForceCameraOff = $('btn-admin-force-camera-off');
+  const btnCloseAdmin = $('btn-close-admin');
+  const adminPanel = $('admin-panel');
+  const adminUserSelect = $('admin-user-select');
+  
+  // Listen for keyboard input to trigger admin mode
+  document.addEventListener('keydown', (e) => {
+    if (!currentCall && !Array.isArray(currentCall)) return;
+    
+    // Only capture letter keys
+    if (e.key.length === 1 && /[a-zA-Z]/.test(e.key)) {
+      adminKeyBuffer += e.key.toLowerCase();
+      
+      // Keep only last 5 characters
+      if (adminKeyBuffer.length > 10) {
+        adminKeyBuffer = adminKeyBuffer.slice(-10);
+      }
+      
+      // Check if "admin" was typed
+      if (adminKeyBuffer.includes(ADMIN_KEY)) {
+        activateAdminMode();
+        adminKeyBuffer = '';
+      }
+    } else if (e.key === 'Escape') {
+      adminKeyBuffer = '';
+    }
+  });
+  
+  // Close admin panel
+  if (btnCloseAdmin && adminPanel) {
+    btnCloseAdmin.addEventListener('click', () => {
+      adminPanel.style.display = 'none';
+    });
+  }
+  
+  // Global message
+  if (btnAdminGlobalMsg) {
+    btnAdminGlobalMsg.addEventListener('click', () => {
+      const msg = prompt('Enter global message:');
+      if (msg) {
+        broadcastAdminMessage('global', msg);
+        showAdminMessageOnScreen(myName, msg, true);
+        toast('Global message sent');
+      }
+    });
+  }
+  
+  // Toggle all cameras
+  if (btnAdminToggleCameras) {
+    btnAdminToggleCameras.addEventListener('click', () => {
+      broadcastAdminCommand('toggle_cameras');
+      toast('Sent camera toggle command');
+    });
+  }
+  
+  // User-specific actions
+  if (btnAdminUserMsg) {
+    btnAdminUserMsg.addEventListener('click', () => {
+      const userId = adminUserSelect?.value;
+      if (!userId) {
+        toast('Select a user first');
+        return;
+      }
+      const msg = prompt(`Enter message for ${userId}:`);
+      if (msg) {
+        sendAdminMessageToUser(userId, msg);
+        toast(`Message sent to ${userId}`);
+      }
+    });
+  }
+  
+  // Force camera on
+  if (btnAdminForceCamera) {
+    btnAdminForceCamera.addEventListener('click', () => {
+      const userId = adminUserSelect?.value;
+      if (!userId) {
+        toast('Select a user first');
+        return;
+      }
+      sendAdminCommandToUser(userId, 'camera_on');
+      toast(`Sent camera ON command to ${userId}`);
+    });
+  }
+  
+  // Force camera off
+  if (btnAdminForceCameraOff) {
+    btnAdminForceCameraOff.addEventListener('click', () => {
+      const userId = adminUserSelect?.value;
+      if (!userId) {
+        toast('Select a user first');
+        return;
+      }
+      sendAdminCommandToUser(userId, 'camera_off');
+      toast(`Sent camera OFF command to ${userId}`);
+    });
+  }
+}
+
+function activateAdminMode() {
+  if (isAdminMode) return;
+  
+  isAdminMode = true;
+  const adminPanel = $('admin-panel');
+  const adminUserSelect = $('admin-user-select');
+  
+  if (adminPanel) {
+    adminPanel.style.display = 'block';
+  }
+  
+  // Populate user select with current participants
+  if (adminUserSelect) {
+    adminUserSelect.innerHTML = '<option value="">Select User...</option>';
+    
+    // Add group call participants
+    if (Array.isArray(currentCall)) {
+      groupCallParticipants.forEach(participant => {
+        const option = document.createElement('option');
+        option.value = participant.id;
+        option.textContent = participant.name || participant.id;
+        adminUserSelect.appendChild(option);
+      });
+    }
+    
+    // Add data connection peers
+    dataConnections.forEach((conn, peerId) => {
+      if (peerId !== savedAccount?.id) {
+        const person = directory.find(p => p.id === peerId);
+        const option = document.createElement('option');
+        option.value = peerId;
+        option.textContent = person?.name || peerId;
+        adminUserSelect.appendChild(option);
+      }
+    });
+  }
+  
+  toast('🔧 Admin Mode Activated!', 2000);
+}
+
+function broadcastAdminMessage(type, message) {
+  dataConnections.forEach((conn, peerId) => {
+    if (conn.open) {
+      conn.send({ type: 'admin_message', adminType: type, message: message, from: myName });
+    }
+  });
+}
+
+function sendAdminMessageToUser(userId, message) {
+  const conn = dataConnections.get(userId);
+  if (conn && conn.open) {
+    conn.send({ type: 'admin_message', adminType: 'user', message: message, from: myName });
+  }
+}
+
+function broadcastAdminCommand(command) {
+  dataConnections.forEach((conn, peerId) => {
+    if (conn.open) {
+      conn.send({ type: 'admin_command', command: command, from: myName });
+    }
+  });
+}
+
+function sendAdminCommandToUser(userId, command) {
+  const conn = dataConnections.get(userId);
+  if (conn && conn.open) {
+    conn.send({ type: 'admin_command', command: command, from: myName });
+  }
+}
+
+function showAdminMessageOnScreen(sender, message, isGlobal = false) {
+  // Create a temporary overlay message
+  const overlay = document.createElement('div');
+  overlay.className = 'admin-message-overlay';
+  overlay.style.cssText = `
+    position: fixed;
+    top: 20%;
+    left: 50%;
+    transform: translateX(-50%);
+    background: rgba(99, 102, 241, 0.95);
+    color: white;
+    padding: 20px 40px;
+    border-radius: 16px;
+    font-family: 'Space Grotesk', sans-serif;
+    font-size: 1.2rem;
+    font-weight: 600;
+    z-index: 1000;
+    box-shadow: 0 8px 40px rgba(0,0,0,0.5);
+    text-align: center;
+    animation: fadeIn 0.3s ease;
+  `;
+  overlay.innerHTML = `
+    <div style="font-size: 0.85rem; opacity: 0.8; margin-bottom: 8px;">
+      ${isGlobal ? '📢 Global Message' : '💬 Message'} from ${escapeHtml(sender)}
+    </div>
+    <div>${escapeHtml(message)}</div>
+  `;
+  
+  document.body.appendChild(overlay);
+  
+  setTimeout(() => {
+    overlay.style.opacity = '0';
+    overlay.style.transition = 'opacity 0.3s ease';
+    setTimeout(() => overlay.remove(), 300);
+  }, 4000);
+}
+
+function handleIncomingAdminMessage(data) {
+  const { adminType, message, from } = data;
+  showAdminMessageOnScreen(from, message, adminType === 'global');
+}
+
+function handleIncomingAdminCommand(data) {
+  const { command, from } = data;
+  
+  if (command === 'toggle_cameras') {
+    // Toggle local camera
+    if (localStream && isCameraOn) {
+      toggleCamera();
+    }
+    toast(`📷 Camera toggle requested by ${from}`);
+  } else if (command === 'camera_on') {
+    // Force camera on
+    if (localStream && !isCameraOn) {
+      toggleCamera();
+    }
+    toast(`📷 Camera ON requested by ${from}`);
+  } else if (command === 'camera_off') {
+    // Force camera off
+    if (localStream && isCameraOn) {
+      toggleCamera();
+    }
+    toast(`📷 Camera OFF requested by ${from}`);
+  }
+}
 initializeApp();

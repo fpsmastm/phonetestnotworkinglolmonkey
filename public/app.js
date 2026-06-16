@@ -476,13 +476,16 @@ function showMessageNotification(senderName, text, peerId) {
 
 function setupDataConnection(conn) {
   dataConnections.set(conn.peer, conn);
+  console.log('Data connection established with:', conn.peer);
   // Re-render people list to update online status
   renderPeople();
   
   conn.on('open', () => {
+    console.log('Data connection opened with:', conn.peer);
     conn.send({ type: 'profile', account: savedAccount });
   });
   conn.on('data', data => {
+    console.log('Received data from', conn.peer, ':', data?.type);
     if (data?.account) rememberAccount(data.account);
     if (data?.type === 'profile') rememberAccount(data.account);
     if (data?.type === 'message') {
@@ -500,6 +503,7 @@ function setupDataConnection(conn) {
     }
     // Handle sound events from soundboard
     if (data?.type === 'sound') {
+      console.log('Sound event received from', conn.peer);
       handleIncomingSound(data);
     }
     // Handle admin messages
@@ -512,20 +516,25 @@ function setupDataConnection(conn) {
     }
   });
   conn.on('close', () => {
+    console.log('Data connection closed with:', conn.peer);
     dataConnections.delete(conn.peer);
     // Re-render people list to update online status
     renderPeople();
   });
   conn.on('error', err => {
-    console.log('Data connection error:', err);
+    console.error('Data connection error with', conn.peer, ':', err);
     // Don't remove from map on transient errors, only on close
   });
 }
 
 function connectToPeer(peerId) {
   if (!peer) return null;
-  if (dataConnections.has(peerId)) return dataConnections.get(peerId);
+  if (dataConnections.has(peerId)) {
+    console.log('Already connected to peer:', peerId);
+    return dataConnections.get(peerId);
+  }
 
+  console.log('Connecting to peer:', peerId);
   const conn = peer.connect(peerId, {
     metadata: { account: savedAccount },
     reliable: true
@@ -533,11 +542,12 @@ function connectToPeer(peerId) {
 
   // Handle connection errors silently - don't kick user out
   conn.on('error', err => {
-    console.log('Connection to peer failed (they may be offline):', err);
+    console.error('Connection to peer failed (they may be offline):', peerId, err);
     // Don't show error toast - just log it
   });
 
   conn.on('close', () => {
+    console.log('Connection to peer closed:', peerId);
     dataConnections.delete(peerId);
   });
 
@@ -1073,6 +1083,11 @@ function initIncomingCallButtons() {
         setupVolumeMonitor(remoteStream);
         toast('Connected! Tap Camera to share video.');
       });
+
+      // Establish data connection for soundboard and messaging
+      setTimeout(() => {
+        connectToPeer(currentCall.peer);
+      }, 500);
 
       currentCall.on('close', endCall);
       currentCall.on('error', err => { toast('Call error'); endCall(); });
@@ -1754,6 +1769,8 @@ function broadcastSoundEvent(url, soundName) {
   // Determine if this is a remote URL or local blob
   const isRemoteUrl = url.startsWith('http');
   
+  console.log('Broadcasting sound:', { url, soundName, isRemoteUrl, connectionCount: dataConnections.size });
+  
   // Send sound event to all connected peers via data channel
   dataConnections.forEach((conn, peerId) => {
     if (conn && conn.open) {
@@ -1765,6 +1782,7 @@ function broadcastSoundEvent(url, soundName) {
             url: url, 
             name: soundName || url.split('/').pop() 
           });
+          console.log('Sent sound URL to peer:', peerId);
         } else {
           // For local/custom sounds, we can't share blob URLs
           // Just send the name as a notification
@@ -1773,18 +1791,23 @@ function broadcastSoundEvent(url, soundName) {
             name: soundName || 'Custom Sound',
             isCustom: true
           });
+          console.log('Sent custom sound notification to peer:', peerId);
         }
       } catch (err) {
-        console.log('Failed to send sound to peer:', peerId);
+        console.error('Failed to send sound to peer:', peerId, err);
       }
+    } else {
+      console.log('Connection not open for peer:', peerId, 'open:', conn?.open);
     }
   });
 }
 
 function handleIncomingSound(data) {
+  console.log('Received sound event:', data);
   // data can be either { url, name } for remote sounds or { name, isCustom } for custom
   if (data.url) {
     // Remote sound with URL - play it directly
+    toast(`🔊 Playing ${data.name}...`);
     playSound(data.url, data.name, true);
   } else if (data.isCustom) {
     // Custom sound from another peer - just show notification
@@ -1795,6 +1818,7 @@ function handleIncomingSound(data) {
       s.url.split('/').pop() === data.name || s.name === data.name
     );
     if (sound) {
+      toast(`🔊 Playing ${sound.name}...`);
       playSound(sound.url, sound.name, true);
     } else {
       toast(`🔊 ${data.name}`);

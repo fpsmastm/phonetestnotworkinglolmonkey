@@ -32,6 +32,7 @@ let analyser      = null;
 let dataConnections = new Map();
 let currentChatId = '';
 let isConnecting  = false;
+let groupCallParticipants = []; // Array of participant IDs for group calls
 
 const ACCOUNT_KEY = 'linkup.account.v3';
 const DIRECTORY_KEY = 'linkup.directory.v3';
@@ -457,15 +458,152 @@ function initCopyId() {
   });
 }
 
-// ── STEP 2: Make a call ──────────────────────────────────────
+// ── STEP 2: Make a call / Group Call ──────────────────────────────────────
 function initCallButton() {
-  const btnCall = $('btn-call');
-  const inputCalleeId = $('input-callee-id');
+  // Group call: add friend to call list
+  const container = $('call-friends-container');
+  const btnAddMore = $('btn-add-more-friends');
+  const btnGroupCall = $('btn-group-call');
+  
+  if (btnAddMore) {
+    btnAddMore.addEventListener('click', () => {
+      const newRow = document.createElement('div');
+      newRow.className = 'input-row call-input-row';
+      newRow.innerHTML = `
+        <input type="text" class="callee-id-input" placeholder="Paste their Call ID" autocomplete="off" spellcheck="false" inputmode="text" />
+        <button class="btn btn-secondary btn-icon add-friend-to-call">Add</button>
+      `;
+      container.appendChild(newRow);
+      
+      // Attach event listener to the new Add button
+      const addBtn = newRow.querySelector('.add-friend-to-call');
+      const input = newRow.querySelector('.callee-id-input');
+      
+      addBtn.addEventListener('click', () => addParticipant(input, newRow));
+      input.addEventListener('keydown', e => { if (e.key === 'Enter') addParticipant(input, newRow); });
+    });
+  }
+  
+  // Initialize the first input row
+  const firstInput = container?.querySelector('.callee-id-input');
+  const firstBtn = container?.querySelector('.add-friend-to-call');
+  
+  if (firstBtn && firstInput) {
+    firstBtn.addEventListener('click', () => addParticipant(firstInput, null));
+    firstInput.addEventListener('keydown', e => { if (e.key === 'Enter') addParticipant(firstInput, null); });
+  }
+  
+  if (btnGroupCall) {
+    btnGroupCall.addEventListener('click', startGroupCall);
+  }
+}
 
-  if (!btnCall || !inputCalleeId) return;
+function addParticipant(input, rowToRemove) {
+  const id = input?.value.trim() || '';
+  if (!id) { toast('Enter a Call ID'); return; }
+  if (id === $('my-peer-id')?.textContent) { toast("That's your own ID!"); return; }
+  if (groupCallParticipants.includes(id)) { toast('Already added!'); return; }
+  if (!peer) { toast('Not connected yet'); return; }
+  
+  groupCallParticipants.push(id);
+  renderParticipantsList();
+  
+  if (input) input.value = '';
+  if (rowToRemove) rowToRemove.remove();
+  
+  toast(`Added ${id} to group call`);
+}
 
-  btnCall.addEventListener('click', makeCall);
-  inputCalleeId.addEventListener('keydown', e => { if (e.key === 'Enter') makeCall(); });
+function renderParticipantsList() {
+  const list = $('call-participants-list');
+  if (!list) return;
+  
+  if (groupCallParticipants.length === 0) {
+    list.innerHTML = '';
+    return;
+  }
+  
+  list.innerHTML = groupCallParticipants.map(id => `
+    <div class="participant-chip" data-id="${escapeHtml(id)}">
+      ${escapeHtml(id)}
+      <button class="remove-participant" data-id="${escapeHtml(id)}" title="Remove">
+        <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M18 6L6 18M6 6l12 12"/></svg>
+      </button>
+    </div>
+  `).join('');
+  
+  // Add event listeners to remove buttons
+  list.querySelectorAll('.remove-participant').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const id = btn.dataset.id;
+      groupCallParticipants = groupCallParticipants.filter(p => p !== id);
+      renderParticipantsList();
+    });
+  });
+}
+
+async function startGroupCall() {
+  if (groupCallParticipants.length === 0) {
+    toast('Add at least one friend to call');
+    return;
+  }
+  if (!peer) { toast('Not connected yet'); return; }
+  
+  // For group calls, we'll call each participant individually (mesh topology)
+  // Request audio + video upfront
+  try {
+    localStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: true });
+  } catch (err) {
+    try {
+      localStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
+    } catch (audioErr) {
+      handleMicError(audioErr);
+      return;
+    }
+  }
+  
+  localStream.getVideoTracks().forEach(t => { t.enabled = false; });
+  isCameraOn = false;
+  attachLocalVideo(localStream);
+  
+  // Call all participants
+  const calls = [];
+  for (const targetId of groupCallParticipants) {
+    const call = peer.call(targetId, localStream, {
+      metadata: { name: myName, account: savedAccount, groupCall: true }
+    });
+    
+    if (call) {
+      calls.push(call);
+      call.on('stream', remoteStream => {
+        attachRemoteStream(remoteStream);
+        $('call-status-badge').textContent = `Connected to ${targetId}`;
+        startCallTimer();
+        setupVolumeMonitor(remoteStream);
+      });
+      call.on('close', () => {
+        console.log(`Call with ${targetId} ended`);
+      });
+      call.on('error', err => {
+        console.error(`Call error with ${targetId}:`, err);
+        toast(`Could not reach ${targetId}`);
+      });
+    }
+  }
+  
+  if (calls.length === 0) {
+    toast('Could not reach any participants');
+    if (localStream) { localStream.getTracks().forEach(t => t.stop()); localStream = null; }
+    return;
+  }
+  
+  // Store the first call as currentCall for UI purposes
+  currentCall = calls[0];
+  showActiveCallScreen('Calling...', `${groupCallParticipants.length} participants`);
+  updateCameraUI();
+  
+  toast(`Calling ${groupCallParticipants.join(', ')}...`);
 }
 
 async function makeCall() {
@@ -637,6 +775,19 @@ function initHangupButton() {
 }
 
 function endCall() {
+  // Close all calls (for group calls)
+  if (Array.isArray(currentCall)) {
+    currentCall.forEach(call => {
+      if (call && typeof call.close === 'function') call.close();
+    });
+  } else if (currentCall) {
+    currentCall.close();
+  }
+  
+  // Clear participant list
+  groupCallParticipants = [];
+  renderParticipantsList();
+  
   if (localStream) {
     localStream.getTracks().forEach(t => t.stop());
     localStream = null;

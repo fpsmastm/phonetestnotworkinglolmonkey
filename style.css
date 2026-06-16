@@ -243,6 +243,93 @@ input:-webkit-autofill:focus {
 .input-row { display: flex; gap: 10px; }
 .input-row input { flex: 1; margin: 0; }
 
+/* ── Group Call UI ── */
+.call-friends-container {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.call-input-row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.call-input-row input {
+  flex: 1;
+  margin: 0;
+}
+
+.btn-text {
+  background: transparent;
+  border: none;
+  color: var(--accent-h);
+  font-size: 0.85rem;
+  font-weight: 500;
+  cursor: pointer;
+  padding: 6px 0;
+  text-align: left;
+  transition: opacity 0.2s;
+}
+
+.btn-text:hover {
+  opacity: 0.8;
+}
+
+.btn-block {
+  width: 100%;
+  margin-top: 10px;
+}
+
+.call-participants-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 8px;
+  min-height: 0;
+}
+
+.participant-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: rgba(99, 102, 241, 0.2);
+  border: 1px solid var(--accent);
+  border-radius: 100px;
+  padding: 4px 10px;
+  font-size: 0.8rem;
+  color: var(--text);
+  font-weight: 500;
+}
+
+.participant-chip .remove-participant {
+  background: transparent;
+  border: none;
+  color: var(--muted);
+  cursor: pointer;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: color 0.15s;
+}
+
+.participant-chip .remove-participant:hover {
+  color: var(--red);
+}
+
+.btn-secondary {
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  color: var(--text);
+}
+
+.btn-secondary:hover:not(:disabled) {
+  border-color: var(--accent);
+}
+
 /* ── Friends List ── */
 .people-list {
   display: flex;

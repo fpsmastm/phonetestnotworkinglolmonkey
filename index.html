@@ -54,15 +54,20 @@
 
       <!-- Call someone -->
       <div class="card call-card">
-        <span class="eyebrow">Call someone</span>
-        <label for="input-callee-id">Their Call ID</label>
-        <div class="input-row">
-          <input id="input-callee-id" type="text" placeholder="Paste their ID here" autocomplete="off" spellcheck="false" inputmode="text" />
-          <button id="btn-call" class="btn btn-primary btn-icon">
-            <svg width="18" height="18" fill="currentColor" viewBox="0 0 24 24"><path d="M6.6 10.8c1.4 2.8 3.8 5.1 6.6 6.6l2.2-2.2c.3-.3.7-.4 1-.2 1.1.4 2.3.6 3.6.6.6 0 1 .4 1 1V20c0 .6-.4 1-1 1-9.4 0-17-7.6-17-17 0-.6.4-1 1-1h3.5c.6 0 1 .4 1 1 0 1.3.2 2.5.6 3.6.1.3 0 .7-.2 1L6.6 10.8z"/></svg>
-            Call
-          </button>
+        <span class="eyebrow">Start a group call</span>
+        <label for="input-callee-id">Add friends by Call ID</label>
+        <div id="call-friends-container" class="call-friends-container">
+          <div class="input-row call-input-row">
+            <input type="text" class="callee-id-input" placeholder="Paste their Call ID" autocomplete="off" spellcheck="false" inputmode="text" />
+            <button class="btn btn-secondary btn-icon add-friend-to-call">Add</button>
+          </div>
         </div>
+        <button id="btn-add-more-friends" class="btn btn-text">+ Add more friends</button>
+        <div id="call-participants-list" class="call-participants-list"></div>
+        <button id="btn-group-call" class="btn btn-primary btn-icon btn-block">
+          <svg width="18" height="18" fill="currentColor" viewBox="0 0 24 24"><path d="M6.6 10.8c1.4 2.8 3.8 5.1 6.6 6.6l2.2-2.2c.3-.3.7-.4 1-.2 1.1.4 2.3.6 3.6.6.6 0 1 .4 1 1V20c0 .6-.4 1-1 1-9.4 0-17-7.6-17-17 0-.6.4-1 1-1h3.5c.6 0 1 .4 1 1 0 1.3.2 2.5.6 3.6.1.3 0 .7-.2 1L6.6 10.8z"/></svg>
+          Start Group Call
+        </button>
       </div>
 
       <!-- Add friend -->

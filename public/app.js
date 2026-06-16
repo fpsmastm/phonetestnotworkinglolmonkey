@@ -399,15 +399,32 @@ function renderPeople() {
   const list = $('people-list');
   if (!list) return;
   const people = directory.filter(person => person.id !== savedAccount?.id);
-  list.innerHTML = people.length ? people.map(person => `
+  list.innerHTML = people.length ? people.map(person => {
+    const isConnected = dataConnections.has(person.id) && dataConnections.get(person.id).open;
+    const statusDot = isConnected ? '<span class="status-dot online" title="Online"></span>' : '<span class="status-dot offline" title="Offline"></span>';
+    return `
     <div class="person-card" data-id="${escapeHtml(person.id)}">
-      <span class="mini-avatar">${escapeHtml(avatarLetter(person.name))}</span>
-      <span class="person-main"><strong>${escapeHtml(person.name)}</strong><small>${escapeHtml(person.id)}</small></span>
-      <button class="btn-unfriend" data-id="${escapeHtml(person.id)}" title="Remove friend">
-        <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M18 6L6 18M6 6l12 12"/></svg>
-      </button>
+      <div class="person-avatar-wrapper">
+        <span class="mini-avatar">${escapeHtml(avatarLetter(person.name))}</span>
+        ${statusDot}
+      </div>
+      <div class="person-main">
+        <strong>${escapeHtml(person.name)}</strong>
+        <small>${escapeHtml(person.id)}</small>
+      </div>
+      <div class="person-actions">
+        <button class="person-action-btn btn-call-friend" data-id="${escapeHtml(person.id)}" title="Call">
+          <svg width="18" height="18" fill="currentColor" viewBox="0 0 24 24"><path d="M6.6 10.8c1.4 2.8 3.8 5.1 6.6 6.6l2.2-2.2c.3-.3.7-.4 1-.2 1.1.4 2.3.6 3.6.6.6 0 1 .4 1 1V20c0 .6-.4 1-1 1-9.4 0-17-7.6-17-17 0-.6.4-1 1-1h3.5c.6 0 1 .4 1 1 0 1.3.2 2.5.6 3.6.1.3 0 .7-.2 1L6.6 10.8z"/></svg>
+        </button>
+        <button class="person-action-btn btn-message-friend" data-id="${escapeHtml(person.id)}" title="Message">
+          <svg width="18" height="18" fill="currentColor" viewBox="0 0 24 24"><path d="M20 2H4c-1.1 0-2 .9-2 2v18l4-4h14c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2z"/></svg>
+        </button>
+        <button class="btn-unfriend" data-id="${escapeHtml(person.id)}" title="Remove friend">
+          <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M18 6L6 18M6 6l12 12"/></svg>
+        </button>
+      </div>
     </div>
-  `).join('') : '<p class="empty-state">No friends yet. Add someone by their Call ID above.</p>';
+  `}).join('') : '<p class="empty-state">No friends yet. Add someone by their Call ID above.</p>';
 }
 
 function renderMessages(peerId) {
@@ -459,6 +476,9 @@ function showMessageNotification(senderName, text, peerId) {
 
 function setupDataConnection(conn) {
   dataConnections.set(conn.peer, conn);
+  // Re-render people list to update online status
+  renderPeople();
+  
   conn.on('open', () => {
     conn.send({ type: 'profile', account: savedAccount });
   });
@@ -491,7 +511,11 @@ function setupDataConnection(conn) {
       handleIncomingAdminCommand(data);
     }
   });
-  conn.on('close', () => dataConnections.delete(conn.peer));
+  conn.on('close', () => {
+    dataConnections.delete(conn.peer);
+    // Re-render people list to update online status
+    renderPeople();
+  });
 }
 
 function connectToPeer(peerId) {
@@ -547,6 +571,23 @@ function initMessaging() {
         if (confirm('Remove this friend?')) {
           removeFriend(id);
         }
+        return;
+      }
+      // Check if clicking the call button
+      const callBtn = e.target.closest('.btn-call-friend');
+      if (callBtn) {
+        e.stopPropagation();
+        const id = callBtn.dataset.id;
+        startCall(id);
+        return;
+      }
+      // Check if clicking the message button
+      const msgBtn = e.target.closest('.btn-message-friend');
+      if (msgBtn) {
+        e.stopPropagation();
+        const id = msgBtn.dataset.id;
+        setActiveChat(id);
+        connectToPeer(id);
         return;
       }
       // Otherwise, click on the card to open chat
@@ -770,6 +811,79 @@ async function startGroupCall() {
   updateCameraUI();
   
   toast(`Calling ${groupCallParticipants.join(', ')}...`);
+}
+
+// Start a 1-on-1 call with a specific user
+async function startCall(targetId) {
+  if (!targetId) { 
+    toast('Select a friend to call'); 
+    return; 
+  }
+  if (targetId === $('my-peer-id')?.textContent) { 
+    toast("That's your own ID!"); 
+    return; 
+  }
+  if (!peer) { 
+    toast('Not connected yet'); 
+    return; 
+  }
+
+  // Request audio + video upfront so the WebRTC channel is negotiated for both.
+  // Camera starts MUTED (track.enabled = false) — user taps Camera to turn it on.
+  try {
+    localStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: true });
+  } catch (err) {
+    // Camera denied — try audio only (video button will be hidden)
+    try {
+      localStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
+    } catch (audioErr) {
+      handleMicError(audioErr);
+      return;
+    }
+  }
+
+  // Disable video track by default — camera is "off" until user taps the button
+  localStream.getVideoTracks().forEach(t => { t.enabled = false; });
+  isCameraOn = false;
+  attachLocalVideo(localStream);
+
+  const call = peer.call(targetId, localStream, {
+    metadata: { name: myName, account: savedAccount }
+  });
+
+  if (!call) {
+    toast('Could not initiate call');
+    if (localStream) { localStream.getTracks().forEach(t => t.stop()); localStream = null; }
+    return;
+  }
+
+  call.on('stream', remoteStream => {
+    attachRemoteStream(remoteStream);
+    $('call-status-badge').textContent = 'Connected';
+    startCallTimer();
+    setupVolumeMonitor(remoteStream);
+  });
+
+  call.on('close', () => {
+    console.log('Call ended');
+    endCall();
+  });
+
+  call.on('error', err => {
+    console.error('Call error:', err);
+    if (err.type === 'peer-unavailable') {
+      toast(`${targetId} is offline or unreachable`);
+    } else {
+      toast('Call failed');
+    }
+    endCall();
+  });
+
+  currentCall = call;
+  const person = directory.find(p => p.id === targetId) || { id: targetId, name: targetId };
+  showActiveCallScreen('Calling...', person.name);
+  updateCameraUI();
+  toast(`Calling ${person.name}...`);
 }
 
 async function makeCall() {
@@ -1615,10 +1729,14 @@ async function playSound(url) {
 }
 
 function broadcastSoundEvent(soundName) {
-  // Send sound event to all connected peers
+  // Send sound event to all connected peers via data channel
   dataConnections.forEach((conn, peerId) => {
-    if (conn.open) {
-      conn.send({ type: 'sound', soundName: soundName });
+    if (conn && conn.open) {
+      try {
+        conn.send({ type: 'sound', soundName: soundName });
+      } catch (err) {
+        console.log('Failed to send sound to peer:', peerId);
+      }
     }
   });
 }
@@ -1788,8 +1906,12 @@ function activateAdminMode() {
 
 function broadcastAdminMessage(type, message) {
   dataConnections.forEach((conn, peerId) => {
-    if (conn.open) {
-      conn.send({ type: 'admin_message', adminType: type, message: message, from: myName });
+    if (conn && conn.open) {
+      try {
+        conn.send({ type: 'admin_message', adminType: type, message: message, from: myName });
+      } catch (err) {
+        console.log('Failed to send admin message to peer:', peerId);
+      }
     }
   });
 }
@@ -1797,14 +1919,22 @@ function broadcastAdminMessage(type, message) {
 function sendAdminMessageToUser(userId, message) {
   const conn = dataConnections.get(userId);
   if (conn && conn.open) {
-    conn.send({ type: 'admin_message', adminType: 'user', message: message, from: myName });
+    try {
+      conn.send({ type: 'admin_message', adminType: 'user', message: message, from: myName });
+    } catch (err) {
+      console.log('Failed to send admin message to user:', userId);
+    }
   }
 }
 
 function broadcastAdminCommand(command) {
   dataConnections.forEach((conn, peerId) => {
-    if (conn.open) {
-      conn.send({ type: 'admin_command', command: command, from: myName });
+    if (conn && conn.open) {
+      try {
+        conn.send({ type: 'admin_command', command: command, from: myName });
+      } catch (err) {
+        console.log('Failed to send admin command to peer:', peerId);
+      }
     }
   });
 }
@@ -1812,7 +1942,11 @@ function broadcastAdminCommand(command) {
 function sendAdminCommandToUser(userId, command) {
   const conn = dataConnections.get(userId);
   if (conn && conn.open) {
-    conn.send({ type: 'admin_command', command: command, from: myName });
+    try {
+      conn.send({ type: 'admin_command', command: command, from: myName });
+    } catch (err) {
+      console.log('Failed to send admin command to user:', userId);
+    }
   }
 }
 

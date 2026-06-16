@@ -361,22 +361,70 @@ input:-webkit-autofill:focus {
   background: rgba(99,102,241,.12);
 }
 
-.mini-avatar {
-  width: 36px;
-  height: 36px;
-  border-radius: 10px;
-  display: grid;
-  place-items: center;
-  background: var(--accent-g);
-  color: #fff;
-  font-family: 'Space Grotesk', sans-serif;
-  font-weight: 700;
-  font-size: 1rem;
+.person-avatar-wrapper {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
-.person-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.status-dot {
+  position: absolute;
+  bottom: -2px;
+  right: -2px;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  border: 2px solid var(--surface);
+}
+.status-dot.online {
+  background: var(--green);
+}
+.status-dot.offline {
+  background: var(--muted);
+}
+
+.person-main { 
+  flex: 1; 
+  min-width: 0; 
+  display: flex; 
+  flex-direction: column; 
+  gap: 2px; 
+}
 .person-main strong { font-weight: 600; }
 .person-main small { color: var(--muted); font-size: .78rem; overflow-wrap: anywhere; }
+
+.person-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.person-action-btn {
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  color: var(--muted);
+  cursor: pointer;
+  padding: 6px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all .15s ease;
+}
+.person-action-btn:hover {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+}
+.person-action-btn.btn-call-friend:hover {
+  background: var(--green);
+  border-color: var(--green);
+}
+.person-action-btn.btn-message-friend:hover {
+  background: var(--accent);
+  border-color: var(--accent);
+}
 
 .btn-unfriend {
   background: transparent;

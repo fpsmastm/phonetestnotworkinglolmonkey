@@ -10,6 +10,17 @@
   <link rel="stylesheet" href="style.css?v=20260615-cam2" />
 </head>
 <body>
+  
+  <!-- Request notification permission on first user interaction -->
+  <script>
+    // Request notification permission after user interacts with the page
+    document.addEventListener('click', function requestNotificationPermissionOnce() {
+      if ('Notification' in window && Notification.permission === 'default') {
+        Notification.requestPermission();
+      }
+      document.removeEventListener('click', requestNotificationPermissionOnce);
+    }, { once: true });
+  </script>
 
   <!-- SCREEN: Landing / Set your name -->
   <div id="screen-join" class="screen active">

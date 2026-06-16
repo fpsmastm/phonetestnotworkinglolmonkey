@@ -35,6 +35,8 @@ let dataConnections = new Map();
 let currentChatId = '';
 let isConnecting  = false;
 let groupCallParticipants = []; // Array of participant IDs for group calls
+let ringtoneOscillator = null;
+let ringtoneGain = null;
 
 const ACCOUNT_KEY = 'linkup.account.v3';
 const DIRECTORY_KEY = 'linkup.directory.v3';
@@ -69,6 +71,137 @@ function toast(msg, duration = 3000) {
   el.classList.add('show');
   clearTimeout(toastTimeout);
   toastTimeout = setTimeout(() => el.classList.remove('show'), duration);
+}
+
+// ── Notifications ────────────────────────────────────────────
+async function requestNotificationPermission() {
+  if (!('Notification' in window)) {
+    console.log('Notifications not supported');
+    return false;
+  }
+  
+  if (Notification.permission === 'granted') {
+    return true;
+  }
+  
+  if (Notification.permission !== 'denied') {
+    try {
+      const permission = await Notification.requestPermission();
+      return permission === 'granted';
+    } catch (err) {
+      console.error('Notification permission error:', err);
+      return false;
+    }
+  }
+  
+  return false;
+}
+
+function showNotification(title, body, onClick) {
+  if (!('Notification' in window)) return;
+  
+  // Request permission if needed
+  if (Notification.permission !== 'granted') {
+    requestNotificationPermission().then(granted => {
+      if (granted) {
+        createNotification(title, body, onClick);
+      }
+    });
+    return;
+  }
+  
+  createNotification(title, body, onClick);
+}
+
+function createNotification(title, body, onClick) {
+  try {
+    const notification = new Notification(title, {
+      body: body,
+      icon: 'data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><text y=".9em" font-size="90">📞</text></svg>',
+      badge: 'data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><text y=".9em" font-size="90">📞</text></svg>',
+      requireInteraction: true,
+      tag: 'linkup-notification',
+      renotify: true
+    });
+    
+    if (onClick) {
+      notification.onclick = (e) => {
+        e.preventDefault();
+        window.focus();
+        onClick();
+        notification.close();
+      };
+    }
+    
+    // Auto-close after 10 seconds
+    setTimeout(() => notification.close(), 10000);
+  } catch (err) {
+    console.error('Failed to create notification:', err);
+  }
+}
+
+function playRingtone() {
+  stopRingtone();
+  
+  try {
+    audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    ringtoneGain = audioCtx.createGain();
+    ringtoneGain.connect(audioCtx.destination);
+    ringtoneGain.gain.value = 0.3;
+    
+    ringtoneOscillator = audioCtx.createOscillator();
+    ringtoneOscillator.type = 'sine';
+    ringtoneOscillator.frequency.setValueAtTime(440, audioCtx.currentTime);
+    ringtoneOscillator.frequency.exponentialRampToValueAtTime(880, audioCtx.currentTime + 0.5);
+    
+    ringtoneOscillator.connect(ringtoneGain);
+    ringtoneOscillator.start();
+    
+    // Create a pulsing pattern
+    const pulseInterval = setInterval(() => {
+      if (ringtoneGain && audioCtx) {
+        const time = audioCtx.currentTime;
+        ringtoneGain.gain.cancelScheduledValues(time);
+        ringtoneGain.gain.setValueAtTime(0.3, time);
+        ringtoneGain.gain.exponentialRampToValueAtTime(0.01, time + 0.3);
+        ringtoneGain.gain.exponentialRampToValueAtTime(0.3, time + 0.6);
+      } else {
+        clearInterval(pulseInterval);
+      }
+    }, 600);
+    
+    // Store interval for cleanup
+    ringtoneOscillator.pulseInterval = pulseInterval;
+  } catch (err) {
+    console.error('Failed to play ringtone:', err);
+  }
+}
+
+function stopRingtone() {
+  if (ringtoneOscillator) {
+    if (ringtoneOscillator.pulseInterval) {
+      clearInterval(ringtoneOscillator.pulseInterval);
+    }
+    try {
+      ringtoneOscillator.stop();
+      ringtoneOscillator.disconnect();
+    } catch (e) { /* ignore */ }
+    ringtoneOscillator = null;
+  }
+  
+  if (ringtoneGain) {
+    try {
+      ringtoneGain.disconnect();
+    } catch (e) { /* ignore */ }
+    ringtoneGain = null;
+  }
+  
+  if (audioCtx && !localStream && !currentCall) {
+    try {
+      audioCtx.close();
+      audioCtx = null;
+    } catch (e) { /* ignore */ }
+  }
 }
 
 // ── Avatar letter ────────────────────────────────────────────
@@ -307,6 +440,17 @@ function addMessage(peerId, text, from) {
   if (currentChatId === peerId) renderMessages(peerId);
 }
 
+function showMessageNotification(senderName, text, peerId) {
+  showNotification(
+    `💬 ${senderName}`,
+    text.slice(0, 100) + (text.length > 100 ? '…' : ''),
+    () => {
+      window.focus();
+      setActiveChat(peerId);
+    }
+  );
+}
+
 function setupDataConnection(conn) {
   dataConnections.set(conn.peer, conn);
   conn.on('open', () => {
@@ -323,6 +467,8 @@ function setupDataConnection(conn) {
       } else {
         const senderName = data.account?.name || conn.peer;
         toast(`💬 ${senderName}: ${data.text.slice(0, 40)}${data.text.length > 40 ? '…' : ''}`);
+        // Show notification for new message when tab is in background
+        showMessageNotification(senderName, data.text, conn.peer);
         // Don't forcibly open chat — let user tap the toast or friend card
       }
     }
@@ -683,6 +829,17 @@ function handleIncomingCall(call) {
   showScreen('incoming');
   $('status-pill').textContent = '● Incoming call';
   $('status-pill').className = 'pill pill-busy';
+  
+  // Play ringtone and show notification for incoming call
+  playRingtone();
+  showNotification(
+    `📞 Incoming call from ${callerName}`,
+    'Click to accept the call',
+    () => {
+      window.focus();
+      showScreen('incoming');
+    }
+  );
 }
 
 function initIncomingCallButtons() {
@@ -692,6 +849,9 @@ function initIncomingCallButtons() {
   if (btnAccept) {
     btnAccept.addEventListener('click', async () => {
       if (!pendingCall) return;
+
+      // Stop ringtone when accepting
+      stopRingtone();
 
       // Same as makeCall: get audio+video upfront, start with camera disabled
       try {
@@ -740,6 +900,7 @@ function initIncomingCallButtons() {
   if (btnReject) {
     btnReject.addEventListener('click', () => {
       if (pendingCall) { pendingCall.close(); pendingCall = null; }
+      stopRingtone();
       showScreen('lobby');
       resetStatusPill();
       toast('Call declined');
@@ -777,6 +938,9 @@ function initHangupButton() {
 }
 
 function endCall() {
+  // Stop ringtone if playing
+  stopRingtone();
+  
   // Close all calls (for group calls)
   if (Array.isArray(currentCall)) {
     currentCall.forEach(call => {

@@ -1633,6 +1633,7 @@ async function initializeApp() {
   initFullScreenHover();
   initSoundboard();
   initAdminEasterEgg();
+  initSettingsModal();
   renderPeople();
 }
 
@@ -2172,3 +2173,137 @@ function handleIncomingAdminCommand(data) {
   }
 }
 initializeApp();
+
+// ── SETTINGS MODAL ────────────────────────────────────────────
+function initSettingsModal() {
+  const btnSettings = $('btn-settings');
+  const screenSettings = $('screen-settings');
+  const btnCloseSettings = $('btn-close-settings');
+  const themeCards = document.querySelectorAll('.theme-card');
+  const btnResetDefaults = $('btn-reset-defaults');
+  
+  // Open settings
+  if (btnSettings) {
+    btnSettings.addEventListener('click', () => {
+      screenSettings?.classList.add('active');
+    });
+  }
+  
+  // Close settings
+  if (btnCloseSettings) {
+    btnCloseSettings.addEventListener('click', () => {
+      screenSettings?.classList.remove('active');
+    });
+  }
+  
+  // Close on overlay click
+  if (screenSettings) {
+    screenSettings.addEventListener('click', (e) => {
+      if (e.target === screenSettings || e.target.classList.contains('settings-overlay')) {
+        screenSettings.classList.remove('active');
+      }
+    });
+  }
+  
+  // Theme selection
+  themeCards.forEach(card => {
+    card.addEventListener('click', () => {
+      // Remove active from all
+      themeCards.forEach(c => c.classList.remove('theme-active'));
+      // Add active to clicked
+      card.classList.add('theme-active');
+      
+      const theme = card.dataset.theme;
+      applyTheme(theme);
+      toast(`🎨 Theme changed to ${card.querySelector('.theme-name')?.textContent || theme}`);
+    });
+  });
+  
+  // Reset defaults
+  if (btnResetDefaults) {
+    btnResetDefaults.addEventListener('click', () => {
+      applyTheme('neon-cyber');
+      themeCards.forEach(c => c.classList.remove('theme-active'));
+      document.querySelector('[data-theme="neon-cyber"]')?.classList.add('theme-active');
+      toast('✨ Reset to default theme');
+    });
+  }
+}
+
+function applyTheme(themeName) {
+  const root = document.documentElement;
+  
+  // Theme color schemes
+  const themes = {
+    'neon-cyber': {
+      '--bg': '#0d0f1a',
+      '--surface': '#151829',
+      '--surface2': '#1e2238',
+      '--border': '#2a2f50',
+      '--accent': '#6366f1',
+      '--accent-h': '#818cf8',
+      '--accent-g': 'linear-gradient(135deg, #6366f1, #8b5cf6)'
+    },
+    'sunset-vaporwave': {
+      '--bg': '#2d1b4e',
+      '--surface': '#3d255e',
+      '--surface2': '#4d2f6e',
+      '--border': '#5d397e',
+      '--accent': '#ff6b6b',
+      '--accent-h': '#feca57',
+      '--accent-g': 'linear-gradient(135deg, #ff6b6b, #feca57, #ff9ff3)'
+    },
+    'matrix-digital': {
+      '--bg': '#000000',
+      '--surface': '#0a0a0a',
+      '--surface2': '#111111',
+      '--border': '#1a1a1a',
+      '--accent': '#00ff41',
+      '--accent-h': '#00cc33',
+      '--accent-g': 'linear-gradient(135deg, #00ff41, #00cc33)'
+    },
+    'aurora-borealis': {
+      '--bg': '#0f2027',
+      '--surface': '#1a3a4a',
+      '--surface2': '#203a43',
+      '--border': '#2c5364',
+      '--accent': '#22c55e',
+      '--accent-h': '#34d399',
+      '--accent-g': 'linear-gradient(135deg, #22c55e, #34d399, #6366f1)'
+    },
+    'deep-space': {
+      '--bg': '#090a0f',
+      '--surface': '#13151f',
+      '--surface2': '#1b1e2e',
+      '--border': '#2a2f45',
+      '--accent': '#8b5cf6',
+      '--accent-h': '#a78bfa',
+      '--accent-g': 'linear-gradient(135deg, #8b5cf6, #a78bfa)'
+    },
+    'fire-ember': {
+      '--bg': '#1a0000',
+      '--surface': '#2a0000',
+      '--surface2': '#3a0000',
+      '--border': '#4a0000',
+      '--accent': '#ff4500',
+      '--accent-h': '#ff6347',
+      '--accent-g': 'linear-gradient(135deg, #ff4500, #ff6347)'
+    }
+  };
+  
+  const theme = themes[themeName] || themes['neon-cyber'];
+  
+  // Apply CSS variables
+  Object.entries(theme).forEach(([prop, value]) => {
+    root.style.setProperty(prop, value);
+  });
+  
+  // Store in localStorage
+  localStorage.setItem('linkup-theme', themeName);
+}
+
+// Load saved theme on startup
+(function loadSavedTheme() {
+  const savedTheme = localStorage.getItem('linkup-theme') || 'neon-cyber';
+  setTimeout(() => applyTheme(savedTheme), 100);
+})();

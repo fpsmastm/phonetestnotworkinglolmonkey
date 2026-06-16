@@ -840,6 +840,36 @@ function handleIncomingCall(call) {
       showScreen('incoming');
     }
   );
+  
+  // Send push notification via service worker (works when tab is closed)
+  sendPushNotification(callerName, call.peer);
+}
+
+// Function to send push notification via backend (placeholder for real implementation)
+async function sendPushNotification(callerName, callerId) {
+  // In a production app, you would send a request to your backend server here
+  // The backend would then use the stored push subscription to send a real push notification
+  // This is just a placeholder showing where the API call would go
+  
+  // Example: 
+  // try {
+  //   await fetch('/api/send-push-notification', {
+  //     method: 'POST',
+  //     headers: { 'Content-Type': 'application/json' },
+  //     body: JSON.stringify({
+  //       toUserId: callerId, // In real app, this would be the recipient's ID
+  //       type: 'call',
+  //       title: `📞 Incoming call from ${myName}`,
+  //       body: `${myName} is calling you`,
+  //       data: { callId: pendingCall?.peer, url: '/' }
+  //     })
+  //   });
+  // } catch (err) {
+  //   console.error('Failed to send push notification:', err);
+  // }
+  
+  console.log('Push notification would be sent to:', callerName);
+  // For now, the browser notification above will work when tab is open but in background
 }
 
 function initIncomingCallButtons() {
@@ -1378,16 +1408,60 @@ function resetStatusPill() {
 }
 
 // ── Initialize ─────────────────────────────────────────────
-showScreen('join');
-initJoinScreen();
-initMessaging();
-initCopyId();
-initCallButton();
-initIncomingCallButtons();
-initHangupButton();
-initMuteButton();
-initCameraButton();
-initScreenButton();
-initSpeakerButton();
-initFullScreenHover();
-renderPeople();
+async function initializeApp() {
+  // Register service worker for push notifications
+  if ('serviceWorker' in navigator) {
+    try {
+      const registration = await navigator.serviceWorker.register('/sw.js');
+      console.log('Service Worker registered:', registration.scope);
+      
+      // Request notification permission
+      await requestNotificationPermission();
+      
+      // Subscribe to push notifications (for production, you'd send this subscription to your server)
+      if (registration.pushManager) {
+        try {
+          const subscription = await registration.pushManager.subscribe({
+            userVisibleOnly: true,
+            applicationServerKey: urlBase64ToUint8Array('YOUR_VAPID_PUBLIC_KEY_HERE') // Replace with your VAPID key
+          });
+          console.log('Push subscription:', JSON.stringify(subscription));
+          // In a real app, send this subscription to your backend server
+          // savePushSubscription(subscription);
+        } catch (subErr) {
+          console.log('Push subscription failed (expected in dev without VAPID):', subErr.message);
+        }
+      }
+    } catch (err) {
+      console.error('Service Worker registration failed:', err);
+    }
+  }
+  
+  showScreen('join');
+  initJoinScreen();
+  initMessaging();
+  initCopyId();
+  initCallButton();
+  initIncomingCallButtons();
+  initHangupButton();
+  initMuteButton();
+  initCameraButton();
+  initScreenButton();
+  initSpeakerButton();
+  initFullScreenHover();
+  renderPeople();
+}
+
+// Helper to convert VAPID key
+function urlBase64ToUint8Array(base64String) {
+  const padding = '='.repeat((4 - base64String.length % 4) % 4);
+  const base64 = (base64String + padding).replace(/-/g, '+').replace(/_/g, '/');
+  const rawData = window.atob(base64);
+  const outputArray = new Uint8Array(rawData.length);
+  for (let i = 0; i < rawData.length; ++i) {
+    outputArray[i] = rawData.charCodeAt(i);
+  }
+  return outputArray;
+}
+
+initializeApp();

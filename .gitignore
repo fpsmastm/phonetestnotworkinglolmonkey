@@ -1,1 +1,3 @@
-(public/app.js and public/index.html are source files, no build artifacts, dependencies, or temp files detected in changes)
+(public/manifest.json and public/sw.js are added, and public/app.js and public/index.html are modified - these appear to be web application source files and assets that should not be ignored)
+
+(empty - output nothing)

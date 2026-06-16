@@ -1807,8 +1807,17 @@ async function broadcastSoundEvent(url, soundName, audioData = null) {
   // Convert ArrayBuffer to Uint8Array for PeerJS compatibility
   let audioDataToSend = null;
   if (audioData) {
-    audioDataToSend = Array.from(new Uint8Array(audioData));
-    console.log('Converted audio data to array, length:', audioDataToSend.length);
+    try {
+      // Create a FRESH copy of the ArrayBuffer to avoid detachment issues
+      const sourceArray = new Uint8Array(audioData);
+      const copyArray = new Uint8Array(sourceArray.length);
+      copyArray.set(sourceArray);
+      audioDataToSend = Array.from(copyArray);
+      console.log('✓ Created safe copy of audio data for transmission, length:', audioDataToSend.length);
+    } catch (e) {
+      console.error('Failed to copy audio data:', e);
+      audioDataToSend = Array.from(new Uint8Array(audioData));
+    }
   } else {
     console.warn('NO AUDIO DATA TO SEND! This is the problem.');
   }

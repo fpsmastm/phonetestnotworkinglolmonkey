@@ -1732,13 +1732,17 @@ function renderSoundboardSounds(container) {
 }
 
 async function playSound(url, soundName = null, isRemote = false, audioData = null) {
+  console.log('=== PLAY SOUND CALLED ===', { url, soundName, isRemote, hasAudioData: !!audioData });
+  
   if (!soundboardAudioContext) {
+    console.error('No audio context available');
     toast('Audio not supported on this device');
     return;
   }
   
   // Resume audio context if suspended (browser policy)
   if (soundboardAudioContext.state === 'suspended') {
+    console.log('Resuming suspended audio context...');
     await soundboardAudioContext.resume();
   }
   
@@ -1747,14 +1751,19 @@ async function playSound(url, soundName = null, isRemote = false, audioData = nu
     
     if (audioData) {
       // Use provided audio data from remote peer
+      console.log('Using provided audio data from remote peer, size:', audioData.byteLength);
       arrayBuffer = audioData;
     } else {
       // Fetch from URL
+      console.log('Fetching audio from URL:', url);
       const response = await fetch(url);
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
       arrayBuffer = await response.arrayBuffer();
+      console.log('Fetched audio data, size:', arrayBuffer.byteLength);
     }
     
     const audioBuffer = await soundboardAudioContext.decodeAudioData(arrayBuffer);
+    console.log('Decoded audio buffer, duration:', audioBuffer.duration.toFixed(2) + 's');
     
     const source = soundboardAudioContext.createBufferSource();
     source.buffer = audioBuffer;
@@ -1766,31 +1775,46 @@ async function playSound(url, soundName = null, isRemote = false, audioData = nu
     gainNode.connect(soundboardAudioContext.destination);
     
     source.start(0);
+    console.log('✓ Sound started playing locally');
     
     // Always broadcast to peers with the audio data we just fetched
     // This ensures everyone gets the actual audio bytes, not just a URL
     if (!isRemote && arrayBuffer) {
+      console.log('Broadcasting sound to peers...');
       broadcastSoundEvent(url, soundName, arrayBuffer);
+    } else if (isRemote) {
+      console.log('This is a remote sound, not broadcasting');
+    } else {
+      console.warn('No audio data to broadcast!');
     }
     
     toast('Playing sound...');
   } catch (err) {
-    console.error('Failed to play sound:', err);
+    console.error('✗ Failed to play sound:', err);
     toast('Could not play sound');
   }
 }
 
 async function broadcastSoundEvent(url, soundName, audioData = null) {
-  console.log('Broadcasting sound:', { url, soundName, connectionCount: dataConnections.size, hasAudioData: !!audioData });
+  console.log('=== BROADCASTING SOUND ===');
+  console.log('Sound details:', { url, soundName, connectionCount: dataConnections.size, hasAudioData: !!audioData });
+  
+  // Log all connections
+  dataConnections.forEach((conn, peerId) => {
+    console.log(`Connection to ${peerId}: open=${conn.open}, readyState=${conn.readyState}`);
+  });
   
   // Convert ArrayBuffer to Uint8Array for PeerJS compatibility
   let audioDataToSend = null;
   if (audioData) {
     audioDataToSend = Array.from(new Uint8Array(audioData));
     console.log('Converted audio data to array, length:', audioDataToSend.length);
+  } else {
+    console.warn('NO AUDIO DATA TO SEND! This is the problem.');
   }
   
   // Send sound event to all connected peers via data channel
+  let sentCount = 0;
   dataConnections.forEach((conn, peerId) => {
     if (conn && conn.open) {
       try {
@@ -1802,22 +1826,30 @@ async function broadcastSoundEvent(url, soundName, audioData = null) {
           audioData: audioDataToSend,
           isCustom: !url.startsWith('http')
         });
-        console.log('Sent audio data to peer:', peerId);
+        console.log('✓ Sent audio data to peer:', peerId);
+        sentCount++;
       } catch (err) {
-        console.error('Failed to send sound to peer:', peerId, err);
+        console.error('✗ Failed to send sound to peer:', peerId, err);
       }
     } else {
-      console.log('Connection not open for peer:', peerId, 'open:', conn?.open);
+      console.log('✗ Connection not open for peer:', peerId, 'open:', conn?.open, 'readyState:', conn?.readyState);
     }
   });
+  
+  if (sentCount === 0) {
+    console.warn('WARNING: Sound was NOT sent to any peers! Check if data connections are established.');
+    toast('⚠️ No connected peers to send sound to');
+  } else {
+    console.log(`✓ Sound sent to ${sentCount} peer(s)`);
+  }
 }
 
 function handleIncomingSound(data) {
-  console.log('Received sound event:', data);
+  console.log('=== INCOMING SOUND EVENT ===', data);
   
   if (data.audioData && Array.isArray(data.audioData)) {
     // Received actual audio data as array - convert back to ArrayBuffer and play
-    toast(`🔊 Playing ${data.name}...`);
+    console.log('✓ Received audio data array, length:', data.audioData.length);
     
     // Convert array back to ArrayBuffer
     const audioData = new Uint8Array(data.audioData).buffer;

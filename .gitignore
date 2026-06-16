@@ -1,1 +1,8 @@
 (public/app.js is just a source file modification, no build artifacts, dependencies, or temp files in the changes)
+
+# wrangler files
+.wrangler
+.dev.vars*
+!.dev.vars.example
+.env*
+!.env.example

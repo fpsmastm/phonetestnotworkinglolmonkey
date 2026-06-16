@@ -1809,15 +1809,14 @@ async function broadcastSoundEvent(url, soundName, audioData = null) {
     console.log(`Connection to ${peerId}: open=${conn.open}, readyState=${conn.readyState}`);
   });
   
-  // Convert ArrayBuffer to Uint8Array for PeerJS compatibility
+  // Convert ArrayBuffer to regular array for PeerJS transmission
   let audioDataToSend = null;
   if (audioData) {
     try {
-      // Create a FRESH copy of the ArrayBuffer to avoid detachment issues
+      // Create a FRESH copy of the ArrayBuffer and convert to plain array
+      // PeerJS can't send raw ArrayBuffers, needs plain JavaScript arrays
       const sourceArray = new Uint8Array(audioData);
-      const copyArray = new Uint8Array(sourceArray.length);
-      copyArray.set(sourceArray);
-      audioDataToSend = Array.from(copyArray);
+      audioDataToSend = Array.from(sourceArray);
       console.log('✓ Created safe copy of audio data for transmission, length:', audioDataToSend.length);
     } catch (e) {
       console.error('Failed to copy audio data:', e);
@@ -1832,8 +1831,9 @@ async function broadcastSoundEvent(url, soundName, audioData = null) {
   dataConnections.forEach((conn, peerId) => {
     if (conn && conn.open) {
       try {
-        // Always send the audio data directly - this is the key fix!
-        // The receiver will play it immediately without needing to fetch anything
+        console.log('Sending audio data to peer:', peerId, 'data size:', audioDataToSend ? audioDataToSend.length : 0);
+        
+        // Send sound event to peer via data channel
         conn.send({ 
           type: 'sound', 
           name: soundName || 'Sound',
@@ -1844,6 +1844,7 @@ async function broadcastSoundEvent(url, soundName, audioData = null) {
         sentCount++;
       } catch (err) {
         console.error('✗ Failed to send sound to peer:', peerId, err);
+        console.error('Error details:', err.message, err.stack);
       }
     } else {
       console.log('✗ Connection not open for peer:', peerId, 'open:', conn?.open, 'readyState:', conn?.readyState);

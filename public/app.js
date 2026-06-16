@@ -1783,6 +1783,13 @@ async function playSound(url, soundName = null, isRemote = false, audioData = nu
 async function broadcastSoundEvent(url, soundName, audioData = null) {
   console.log('Broadcasting sound:', { url, soundName, connectionCount: dataConnections.size, hasAudioData: !!audioData });
   
+  // Convert ArrayBuffer to Uint8Array for PeerJS compatibility
+  let audioDataToSend = null;
+  if (audioData) {
+    audioDataToSend = Array.from(new Uint8Array(audioData));
+    console.log('Converted audio data to array, length:', audioDataToSend.length);
+  }
+  
   // Send sound event to all connected peers via data channel
   dataConnections.forEach((conn, peerId) => {
     if (conn && conn.open) {
@@ -1792,7 +1799,7 @@ async function broadcastSoundEvent(url, soundName, audioData = null) {
         conn.send({ 
           type: 'sound', 
           name: soundName || 'Sound',
-          audioData: audioData,
+          audioData: audioDataToSend,
           isCustom: !url.startsWith('http')
         });
         console.log('Sent audio data to peer:', peerId);
@@ -1808,20 +1815,23 @@ async function broadcastSoundEvent(url, soundName, audioData = null) {
 function handleIncomingSound(data) {
   console.log('Received sound event:', data);
   
-  if (data.audioData) {
-    // Received actual audio data - play it immediately
+  if (data.audioData && Array.isArray(data.audioData)) {
+    // Received actual audio data as array - convert back to ArrayBuffer and play
     toast(`🔊 Playing ${data.name}...`);
+    
+    // Convert array back to ArrayBuffer
+    const audioData = new Uint8Array(data.audioData).buffer;
     
     // Resume audio context if suspended
     if (soundboardAudioContext && soundboardAudioContext.state === 'suspended') {
       soundboardAudioContext.resume().then(() => {
-        playSound(null, data.name, true, data.audioData);
+        playSound(null, data.name, true, audioData);
       }).catch(err => {
         console.error('Failed to resume audio context:', err);
-        playSound(null, data.name, true, data.audioData);
+        playSound(null, data.name, true, audioData);
       });
     } else {
-      playSound(null, data.name, true, data.audioData);
+      playSound(null, data.name, true, audioData);
     }
   } else if (data.url) {
     // Received URL only - fetch and play

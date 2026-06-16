@@ -1731,15 +1731,24 @@ function renderSoundboardSounds(container) {
   });
 }
 
-async function playSound(url, soundName = null, isRemote = false) {
+async function playSound(url, soundName = null, isRemote = false, audioData = null) {
   if (!soundboardAudioContext) {
     toast('Audio not supported on this device');
     return;
   }
   
   try {
-    const response = await fetch(url);
-    const arrayBuffer = await response.arrayBuffer();
+    let arrayBuffer;
+    
+    if (audioData) {
+      // Use provided audio data from remote peer
+      arrayBuffer = audioData;
+    } else {
+      // Fetch from URL
+      const response = await fetch(url);
+      arrayBuffer = await response.arrayBuffer();
+    }
+    
     const audioBuffer = await soundboardAudioContext.decodeAudioData(arrayBuffer);
     
     const source = soundboardAudioContext.createBufferSource();
@@ -1755,7 +1764,7 @@ async function playSound(url, soundName = null, isRemote = false) {
     
     // Also send to peers via data channel (only if not already remote)
     if (!isRemote) {
-      broadcastSoundEvent(url, soundName);
+      broadcastSoundEvent(url, soundName, audioData);
     }
     
     toast('Playing sound...');
@@ -1765,18 +1774,19 @@ async function playSound(url, soundName = null, isRemote = false) {
   }
 }
 
-function broadcastSoundEvent(url, soundName) {
+async function broadcastSoundEvent(url, soundName, audioData = null) {
   // Determine if this is a remote URL or local blob
   const isRemoteUrl = url.startsWith('http');
   
-  console.log('Broadcasting sound:', { url, soundName, isRemoteUrl, connectionCount: dataConnections.size });
+  console.log('Broadcasting sound:', { url, soundName, isRemoteUrl, connectionCount: dataConnections.size, hasAudioData: !!audioData });
   
   // Send sound event to all connected peers via data channel
   dataConnections.forEach((conn, peerId) => {
     if (conn && conn.open) {
       try {
-        if (isRemoteUrl) {
-          // For remote sounds, send the URL directly
+        if (isRemoteUrl && !audioData) {
+          // For remote sounds without pre-fetched data, send the URL
+          // Receiver will fetch it themselves
           conn.send({ 
             type: 'sound', 
             url: url, 
@@ -1784,14 +1794,43 @@ function broadcastSoundEvent(url, soundName) {
           });
           console.log('Sent sound URL to peer:', peerId);
         } else {
-          // For local/custom sounds, we can't share blob URLs
-          // Just send the name as a notification
+          // For local/custom sounds OR when we have audio data, send the ArrayBuffer
+          // This ensures everyone hears the exact same sound
+          let arrayBufferToSend = audioData;
+          
+          // If no audioData provided but it's a remote URL, fetch it now
+          if (!arrayBufferToSend && isRemoteUrl) {
+            console.log('Fetching audio data to send to peer:', url);
+            fetch(url)
+              .then(response => response.arrayBuffer())
+              .then(buffer => {
+                conn.send({ 
+                  type: 'sound', 
+                  name: soundName || url.split('/').pop(),
+                  audioData: buffer 
+                });
+                console.log('Sent fetched audio data to peer:', peerId);
+              })
+              .catch(err => {
+                console.error('Failed to fetch audio for broadcasting:', err);
+                // Fallback: send URL only
+                conn.send({ 
+                  type: 'sound', 
+                  url: url, 
+                  name: soundName || url.split('/').pop() 
+                });
+              });
+            return; // Continue to next peer
+          }
+          
+          // Send the audio data directly
           conn.send({ 
             type: 'sound', 
             name: soundName || 'Custom Sound',
-            isCustom: true
+            audioData: arrayBufferToSend,
+            isCustom: !isRemoteUrl
           });
-          console.log('Sent custom sound notification to peer:', peerId);
+          console.log('Sent custom sound audio data to peer:', peerId);
         }
       } catch (err) {
         console.error('Failed to send sound to peer:', peerId, err);
@@ -1804,13 +1843,17 @@ function broadcastSoundEvent(url, soundName) {
 
 function handleIncomingSound(data) {
   console.log('Received sound event:', data);
-  // data can be either { url, name } for remote sounds or { name, isCustom } for custom
-  if (data.url) {
-    // Remote sound with URL - play it directly
+  
+  if (data.audioData) {
+    // Received actual audio data - play it immediately
+    toast(`🔊 Playing ${data.name}...`);
+    playSound(null, data.name, true, data.audioData);
+  } else if (data.url) {
+    // Received URL only - fetch and play
     toast(`🔊 Playing ${data.name}...`);
     playSound(data.url, data.name, true);
   } else if (data.isCustom) {
-    // Custom sound from another peer - just show notification
+    // Custom sound notification without audio data
     toast(`🔊 ${data.name} (played by peer)`);
   } else {
     // Legacy format - try to find sound by name

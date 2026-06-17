@@ -801,10 +801,16 @@ async function startGroupCall() {
   // For group calls, we'll call each participant individually (mesh topology)
   // Request audio + video upfront
   try {
-    localStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: true });
+    localStream = await navigator.mediaDevices.getUserMedia({ 
+      audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true }, 
+      video: true 
+    });
   } catch (err) {
     try {
-      localStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
+      localStream = await navigator.mediaDevices.getUserMedia({ 
+        audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true }, 
+        video: false 
+      });
     } catch (audioErr) {
       handleMicError(audioErr);
       return;
@@ -814,6 +820,15 @@ async function startGroupCall() {
   localStream.getVideoTracks().forEach(t => { t.enabled = false; });
   isCameraOn = false;
   attachLocalVideo(localStream);
+  
+  // FIRST: Establish data connections to all participants BEFORE making calls
+  // This ensures soundboard, chat, and screen sharing work from the start
+  for (const targetId of groupCallParticipants) {
+    connectToPeer(targetId);
+  }
+  
+  // Wait a moment for data connections to establish
+  await new Promise(resolve => setTimeout(resolve, 300));
   
   // Call all participants
   const calls = [];
@@ -828,11 +843,6 @@ async function startGroupCall() {
     
     if (call) {
       calls.push(call);
-      
-      // Establish data connection for this call participant
-      setTimeout(() => {
-        connectToPeer(targetId);
-      }, 500);
       
       call.on('stream', remoteStream => {
         attachRemoteStream(remoteStream);
@@ -882,11 +892,17 @@ async function startCall(targetId) {
   // Request audio + video upfront so the WebRTC channel is negotiated for both.
   // Camera starts MUTED (track.enabled = false) — user taps Camera to turn it on.
   try {
-    localStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: true });
+    localStream = await navigator.mediaDevices.getUserMedia({ 
+      audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true }, 
+      video: true 
+    });
   } catch (err) {
     // Camera denied — try audio only (video button will be hidden)
     try {
-      localStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
+      localStream = await navigator.mediaDevices.getUserMedia({ 
+        audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true }, 
+        video: false 
+      });
     } catch (audioErr) {
       handleMicError(audioErr);
       return;
@@ -898,6 +914,13 @@ async function startCall(targetId) {
   isCameraOn = false;
   attachLocalVideo(localStream);
 
+  // FIRST: Establish data connection BEFORE making the call
+  // This ensures soundboard, chat, and screen sharing work from the start
+  connectToPeer(targetId);
+  
+  // Wait a moment for data connection to establish
+  await new Promise(resolve => setTimeout(resolve, 300));
+
   const call = peer.call(targetId, localStream, {
     metadata: { name: myName, account: savedAccount }
   });
@@ -907,11 +930,6 @@ async function startCall(targetId) {
     if (localStream) { localStream.getTracks().forEach(t => t.stop()); localStream = null; }
     return;
   }
-
-  // Establish data connection for soundboard and messaging during call
-  setTimeout(() => {
-    connectToPeer(targetId);
-  }, 500);
 
   call.on('stream', remoteStream => {
     attachRemoteStream(remoteStream);
@@ -952,11 +970,17 @@ async function makeCall() {
   // Request audio + video upfront so the WebRTC channel is negotiated for both.
   // Camera starts MUTED (track.enabled = false) — user taps Camera to turn it on.
   try {
-    localStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: true });
+    localStream = await navigator.mediaDevices.getUserMedia({ 
+      audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true }, 
+      video: true 
+    });
   } catch (err) {
     // Camera denied — try audio only (video button will be hidden)
     try {
-      localStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
+      localStream = await navigator.mediaDevices.getUserMedia({ 
+        audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true }, 
+        video: false 
+      });
     } catch (audioErr) {
       handleMicError(audioErr);
       return;
@@ -970,16 +994,18 @@ async function makeCall() {
   // Show local preview (black until enabled, but element is ready)
   attachLocalVideo(localStream);
 
+  // FIRST: Establish data connection BEFORE making the call
+  // This ensures soundboard, chat, and screen sharing work from the start
+  connectToPeer(targetId);
+  
+  // Wait a moment for data connection to establish
+  await new Promise(resolve => setTimeout(resolve, 300));
+
   const call = peer.call(targetId, localStream, {
     metadata: { name: myName, account: savedAccount }
   });
 
   if (!call) { toast('Could not reach that ID'); return; }
-
-  // Establish data connection for soundboard and messaging during call
-  setTimeout(() => {
-    connectToPeer(targetId);
-  }, 500);
 
   currentCall = call;
   showActiveCallScreen('Calling...', targetId);
@@ -1078,10 +1104,16 @@ function initIncomingCallButtons() {
 
       // Same as makeCall: get audio+video upfront, start with camera disabled
       try {
-        localStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: true });
+        localStream = await navigator.mediaDevices.getUserMedia({ 
+          audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true }, 
+          video: true 
+        });
       } catch (err) {
         try {
-          localStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
+          localStream = await navigator.mediaDevices.getUserMedia({ 
+            audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true }, 
+            video: false 
+          });
         } catch (audioErr) {
           handleMicError(audioErr);
           pendingCall.close();
@@ -1115,10 +1147,8 @@ function initIncomingCallButtons() {
         toast('Connected! Tap Camera to share video.');
       });
 
-      // Establish data connection for soundboard and messaging
-      setTimeout(() => {
-        connectToPeer(currentCall.peer);
-      }, 500);
+      // FIRST: Establish data connection for soundboard and messaging BEFORE anything else
+      connectToPeer(currentCall.peer);
 
       // If this is a group call, the host tells us who else is on the call.
       // Connect to each of them directly too, so soundboard sounds and
@@ -1126,7 +1156,7 @@ function initIncomingCallButtons() {
       if (currentCall.metadata?.groupCall && Array.isArray(currentCall.metadata?.participants)) {
         currentCall.metadata.participants.forEach(otherId => {
           if (otherId && otherId !== savedAccount?.id) {
-            setTimeout(() => connectToPeer(otherId), 800);
+            connectToPeer(otherId);
           }
         });
       }

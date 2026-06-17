@@ -223,10 +223,14 @@ function friendlyId(name) {
 }
 
 function getOrCreateAccount(name) {
-  if (savedAccount?.id) {
-    savedAccount.name = name || savedAccount.name;
+  if (savedAccount?.id && savedAccount?.name) {
+    // Account already exists - use the SAVED name and ID, ignore new name input
+    myName = savedAccount.name;
+    return savedAccount;
   } else {
+    // First time - create new account
     savedAccount = { id: friendlyId(name), name, createdAt: Date.now() };
+    myName = name;
   }
   saveJson(ACCOUNT_KEY, savedAccount);
   rememberAccount(savedAccount);
@@ -255,6 +259,21 @@ async function startSession() {
   const inputName = $('input-name');
   const btnStart = $('btn-start');
 
+  // Check if we have a saved account - if so, ALWAYS use it regardless of name input
+  if (savedAccount?.id && savedAccount?.name) {
+    // User already has an account - use the saved one
+    myName = savedAccount.name;
+    const peerId = savedAccount.id;
+    
+    isConnecting = true;
+    btnStart.textContent = 'Connecting...';
+    btnStart.disabled = true;
+    
+    await connectPeer(peerId);
+    return;
+  }
+  
+  // First time user - create new account
   const name = inputName?.value.trim() || '';
   if (!name) { toast('Enter your name first!'); inputName?.focus(); return; }
 
@@ -268,6 +287,13 @@ async function startSession() {
 
   await connectPeer(peerId);
 }
+
+// Clear saved account function (for testing/debugging)
+window.clearSavedAccount = function() {
+  localStorage.removeItem(ACCOUNT_KEY);
+  savedAccount = null;
+  location.reload();
+};
 
 async function connectPeer(peerId) {
   return new Promise((resolve, reject) => {
@@ -330,11 +356,12 @@ async function connectPeer(peerId) {
       }
 
       if (err.type === 'unavailable-id') {
-        // Generate a new ID if the saved one is taken (e.g. another tab open)
-        toast('Creating a new Call ID...');
-        savedAccount = { id: friendlyId(myName), name: myName, createdAt: Date.now() };
-        saveJson(ACCOUNT_KEY, savedAccount);
-        connectPeer(savedAccount.id).then(resolve).catch(reject);
+        // ID is taken - this should NOT happen for existing accounts
+        // Keep the saved account and retry connection after a delay
+        toast('Call ID in use, retrying...');
+        setTimeout(() => {
+          connectPeer(savedAccount.id).then(resolve).catch(reject);
+        }, 1000);
         return;
       }
 
